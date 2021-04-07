@@ -1,16 +1,18 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
 import os
+
+import numpy as np
+import pandas as pd
 import torch
-from PIL import Image, ImageFile
-from torchvision import transforms
 import torchvision.datasets.folder
-from torch.utils.data import TensorDataset, Subset
+from PIL import Image, ImageFile
+from torch.utils.data import DataLoader, Dataset, Subset, TensorDataset
+from torchvision import transforms
 from torchvision.datasets import MNIST, ImageFolder
 from torchvision.transforms.functional import rotate
-
-from wilds.datasets.camelyon17_dataset import Camelyon17Dataset
-from wilds.datasets.fmow_dataset import FMoWDataset
+# from wilds.datasets.camelyon17_dataset import Camelyon17Dataset
+# from wilds.datasets.fmow_dataset import FMoWDataset
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -28,6 +30,7 @@ DATASETS = [
     "TerraIncognita",
     "DomainNet",
     "SVIRO",
+    "PACS_splits",
     # WILDS datasets
     "WILDSCamelyon",
     "WILDSFMoW"
@@ -42,7 +45,45 @@ def get_dataset_class(dataset_name):
 
 def num_environments(dataset_name):
     return len(get_dataset_class(dataset_name).ENVIRONMENTS)
+def pil_loader(path):
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+    with open(path, 'rb') as f:
+        with Image.open(f) as img:
+            return img.convert('RGB')
+class myImageList(Dataset):
+    """Face Landmarks dataset."""
 
+    def __init__(self, csv_file, root_dir, transform=None):
+        """
+        Args:
+            csv_file (string): Path to the csv file with annotations.
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.images_labels_df = pd.read_csv(csv_file)
+        self.root_dir = root_dir
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.images_labels_df)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        img_name = os.path.join(self.root_dir,
+                                self.images_labels_df.iloc[idx, 0])
+
+
+        image = pil_loader(img_name)
+        label = self.images_labels_df.iloc[idx, 1]
+    
+        
+        if self.transform:
+            image= self.transform(image)
+
+        return image,label
 
 class MultipleDomainDataset:
     N_STEPS = 5001           # Default, subclasses may override
@@ -215,6 +256,50 @@ class MultipleEnvironmentImageFolder(MultipleDomainDataset):
 
         self.input_shape = (3, 224, 224,)
         self.num_classes = len(self.datasets[-1].classes)
+class MultipleEnvironmentImageLIST(MultipleDomainDataset):
+    def __init__(self, csv_root,data_root, test_envs, augment, hparams):
+        super().__init__()
+        #csv_files= sorted([os.path.join(csv_root,f) for f in  os.scandir(csv_root)])
+        environments = [os.path.splitext(os.path.basename(f))[0] for f in os.scandir(csv_root) ]
+        
+        environments = sorted(environments)
+
+        transform = transforms.Compose([
+            transforms.Resize((224,224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        augment_transform = transforms.Compose([
+            # transforms.Resize((224,224)),
+            transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+            transforms.RandomGrayscale(),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.datasets = []
+        for i, environment in enumerate(environments):
+
+            if augment and (i not in test_envs):
+                env_transform = augment_transform
+            else:
+                env_transform = transform
+            csv_file = os.path.join(csv_root,environment+'.csv')
+
+            # env_dataset = ImageFolder(path,
+            #     transform=env_transform)
+            env_dataset = myImageList(csv_file,data_root,
+                transform=env_transform)
+
+            self.datasets.append(env_dataset)
+
+        self.input_shape = (3, 224, 224,)
+        self.num_classes = 7#len(self.datasets[-1].classes)
 
 class VLCS(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 300
@@ -229,6 +314,13 @@ class PACS(MultipleEnvironmentImageFolder):
     def __init__(self, root, test_envs, hparams):
         self.dir = os.path.join(root, "PACS/")
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
+class PACS_splits(MultipleEnvironmentImageLIST):
+    CHECKPOINT_FREQ = 300
+    ENVIRONMENTS= ['domain_0','domain_1','domain_2','domain_3','domain_4']
+    def __init__(self, csv_root,data_root, test_envs, hparams):
+        self.dir = data_root
+
+        super().__init__(csv_root,self.dir, test_envs, hparams['data_augmentation'], hparams)
 
 class DomainNet(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 1000

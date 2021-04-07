@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description="Domain generalization testbed")
-    parser.add_argument("--input_dir", type=str, default="")
+    parser.add_argument("--input_dir", type=str, default="train_output")
     parser.add_argument("--latex", action="store_true")
     args = parser.parse_args()
 

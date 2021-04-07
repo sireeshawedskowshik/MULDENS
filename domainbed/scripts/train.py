@@ -20,15 +20,16 @@ from domainbed import hparams_registry
 from domainbed import algorithms
 from domainbed.lib import misc
 from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
-
+os.chdir('/media/kowshik/Data11/DomainBed')
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
-    parser.add_argument('--data_dir', type=str)
-    parser.add_argument('--dataset', type=str, default="RotatedMNIST")
-    parser.add_argument('--algorithm', type=str, default="ERM")
+    parser.add_argument('--data_dir', type=str,default= '/media/kowshik/Data11/DomainBed/')
+    parser.add_argument('--csv_root', type= str,default= '/media/kowshik/Data11/DomainBed/PACS_splits/seed_12')
+    parser.add_argument('--dataset', type=str, default="PACS_splits")
+    parser.add_argument('--algorithm', type=str, default="IRM")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,
+    parser.add_argument('--hparams', type=str,default= '{"batch_size": 16}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -61,7 +62,7 @@ if __name__ == "__main__":
     print("Environment:")
     print("\tPython: {}".format(sys.version.split(" ")[0]))
     print("\tPyTorch: {}".format(torch.__version__))
-    print("\tTorchvision: {}".format(torchvision.__version__))
+    #print("\tTorchvision: {}".format(torchvision.__version__))
     print("\tCUDA: {}".format(torch.version.cuda))
     print("\tCUDNN: {}".format(torch.backends.cudnn.version()))
     print("\tNumPy: {}".format(np.__version__))
@@ -95,8 +96,12 @@ if __name__ == "__main__":
         device = "cpu"
 
     if args.dataset in vars(datasets):
-        dataset = vars(datasets)[args.dataset](args.data_dir,
-            args.test_envs, hparams)
+        if args.dataset=='PACS_splits': 
+            dataset = vars(datasets)[args.dataset](args.csv_root,args.data_dir,args.test_envs,hparams)
+        else:
+            dataset = vars(datasets)[args.dataset](args.data_dir,
+                args.test_envs, hparams)
+
     else:
         raise NotImplementedError
 
