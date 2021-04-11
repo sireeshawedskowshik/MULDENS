@@ -7,3 +7,4 @@ domainbed/facebook.py
 *.jsonl
 *.pkl
 *.json
+*done*

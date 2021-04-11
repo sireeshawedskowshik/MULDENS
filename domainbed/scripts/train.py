@@ -20,16 +20,16 @@ from domainbed import hparams_registry
 from domainbed import algorithms
 from domainbed.lib import misc
 from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
-os.chdir('/media/kowshik/Data11/DomainBed')
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
-    parser.add_argument('--data_dir', type=str,default= '/media/kowshik/Data11/DomainBed/')
-    parser.add_argument('--csv_root', type= str,default= '/media/kowshik/Data11/DomainBed/PACS_splits/seed_12')
+    parser.add_argument('--data_dir', type=str,default= '')
+    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/seed_102')
     parser.add_argument('--dataset', type=str, default="PACS_splits")
-    parser.add_argument('--algorithm', type=str, default="IRM")
+    parser.add_argument('--algorithm', type=str, default="ERM")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size": 16}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":32}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -43,11 +43,11 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[0])
-    parser.add_argument('--output_dir', type=str, default="train_output")
+    parser.add_argument('--output_dir', type=str, default="train_output_1")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
-    parser.add_argument('--save_model_every_checkpoint', action='store_true')
+    parser.add_argument('--save_model_every_checkpoint', action='store_true',default=True)
     args = parser.parse_args()
 
     # If we ever want to implement checkpointing, just persist these values
@@ -207,6 +207,7 @@ if __name__ == "__main__":
 
     last_results_keys = None
     for step in range(start_step, n_steps):
+        algorithm.to(device)
         step_start_time = time.time()
         minibatches_device = [(x.to(device), y.to(device))
             for x,y in next(train_minibatches_iterator)]
