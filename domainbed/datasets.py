@@ -88,7 +88,7 @@ class myImageList(Dataset):
 class MultipleDomainDataset:
     N_STEPS = 5001           # Default, subclasses may override
     CHECKPOINT_FREQ = 100    # Default, subclasses may override
-    N_WORKERS = 8            # Default, subclasses may override
+    N_WORKERS = 0        # Default, subclasses may override
     ENVIRONMENTS = None      # Subclasses should override
     INPUT_SHAPE = None       # Subclasses should override
 
@@ -316,10 +316,9 @@ class PACS(MultipleEnvironmentImageFolder):
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
 class PACS_splits(MultipleEnvironmentImageLIST):
     CHECKPOINT_FREQ = 300
-    ENVIRONMENTS= ['domain_0','domain_1','domain_2','domain_3','domain_4']
+    ENVIRONMENTS= ['domain_0','domain_1','domain_2','domain_3','domain_4','sketch']
     def __init__(self, csv_root,data_root, test_envs, hparams):
         self.dir = data_root
-
         super().__init__(csv_root,self.dir, test_envs, hparams['data_augmentation'], hparams)
 
 class DomainNet(MultipleEnvironmentImageFolder):

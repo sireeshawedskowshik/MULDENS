@@ -77,7 +77,8 @@ def _hparams(algorithm, dataset, random_seed):
 
     elif algorithm == "SD":
         _hparam('sd_reg', 0.1, lambda r: 10**r.uniform(-5, -1))
-
+    elif algorithm == "INVENIO":
+        _hparam('invenio_beta',1.,lambda r: 10**r.uniform(-1, 1))
 
     # Dataset-and-algorithm-specific hparam definitions. Each block of code
     # below corresponds to exactly one hparam. Avoid nested conditionals.
@@ -120,7 +121,8 @@ def _hparams(algorithm, dataset, random_seed):
         _hparam('weight_decay_g', 0., lambda r: 0.)
     elif algorithm in ['DANN', 'CDANN']:
         _hparam('weight_decay_g', 0., lambda r: 10**r.uniform(-6, -2) )
-
+    if algorithm in ['INVENIO']:
+        _hparam('invenio_num_models',2, lambda r: r.randint(3,size=1))
 
     return hparams
 

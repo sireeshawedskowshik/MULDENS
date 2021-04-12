@@ -23,10 +23,10 @@ from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
-    parser.add_argument('--data_dir', type=str,default= '')
-    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/seed_102')
-    parser.add_argument('--dataset', type=str, default="PACS_splits")
-    parser.add_argument('--algorithm', type=str, default="ERM")
+    parser.add_argument('--data_dir', type=str,default= 'DATA/')
+    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_334')
+    parser.add_argument('--dataset', type=str, default="PACS")
+    parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
     parser.add_argument('--hparams', type=str,default= '{"batch_size":32}',
@@ -42,8 +42,8 @@ if __name__ == "__main__":
         help='Number of steps. Default is dataset-dependent.')
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
-    parser.add_argument('--test_envs', type=int, nargs='+', default=[0])
-    parser.add_argument('--output_dir', type=str, default="train_output_1")
+    parser.add_argument('--test_envs', type=int, nargs='+', default=[3])
+    parser.add_argument('--output_dir', type=str, default="train_output_PACS_INVENIO")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -165,6 +165,14 @@ if __name__ == "__main__":
         batch_size=64,
         num_workers=dataset.N_WORKERS)
         for env, _ in (in_splits + out_splits + uda_splits)]
+
+    val_loaders_invenio = [InfiniteDataLoader(
+        dataset=env,
+        weights=env_weights,
+        batch_size=hparams['batch_size'],
+        num_workers=dataset.N_WORKERS)
+        for i, (env, env_weights) in enumerate(out_splits)
+        if i not in args.test_envs]
     eval_weights = [None for _, weights in (in_splits + out_splits + uda_splits)]
     eval_loader_names = ['env{}_in'.format(i)
         for i in range(len(in_splits))]
@@ -183,6 +191,7 @@ if __name__ == "__main__":
     algorithm.to(device)
 
     train_minibatches_iterator = zip(*train_loaders)
+    val_minibatches_iterator_invenio = zip(*val_loaders_invenio)
     uda_minibatches_iterator = zip(*uda_loaders)
     checkpoint_vals = collections.defaultdict(lambda: [])
 
@@ -216,7 +225,17 @@ if __name__ == "__main__":
                 for x,_ in next(uda_minibatches_iterator)]
         else:
             uda_device = None
-        step_vals = algorithm.update(minibatches_device, uda_device)
+        if args.algorithm =='INVENIO':
+
+            # we need validation in_splits of observed domains
+            val_minibatches= [(x.to(device), y.to(device))\
+            for x,y in next(val_minibatches_iterator_invenio)]
+            
+            step_vals = algorithm.update(minibatches_device, val_minibatches,uda_device)
+        else:
+            step_vals = algorithm.update(minibatches_device, uda_device)
+        
+
         checkpoint_vals['step_time'].append(time.time() - step_start_time)
 
         for key, val in step_vals.items():
