@@ -10,6 +10,7 @@ import numpy as np
 
 from domainbed import networks
 from domainbed.lib.misc import random_pairs_of_minibatches
+from domainbed.lib.misc import compare_models
 
 ALGORITHMS = [
     'ERM',
@@ -530,11 +531,11 @@ class INVENIO(ERM):
                             self.num_classes,
                             self.hparams['nonlinear_classifier']) for _ in range(self.num_models)])
         # verify that they are different 
-        self.invenio_networks= [nn.Sequential(self.featurizer,classifier_i) \
-            for classifier_i in self.classifiers]
+        self.invenio_networks= torch.nn.ModuleList([nn.Sequential(copy.deepcopy(self.featurizer),classifier_i) \
+            for classifier_i in self.classifiers])
         self.invenio_network_optimizers =[ torch.optim.Adam(
                 network_i.parameters(),
-                lr=self.hparams["lr"],
+                lr=self.hparams["lr_invenio"],
                 weight_decay=self.hparams['weight_decay']
             ) for network_i in self.invenio_networks]
 
@@ -551,7 +552,7 @@ class INVENIO(ERM):
                                     src.parameters()):
                 if p_src.grad is not None:
                     p_tgt.grad.data.add_(p_src.grad.data / num_mb)
-        return dest
+        
     def update(self, minibatches,val_minibatches, unlabeled=None):
         """
         Terms being computed:
@@ -589,7 +590,7 @@ class INVENIO(ERM):
         inner_net_models= torch.nn.ModuleList([copy.deepcopy(network_i) for network_i in self.invenio_networks])
         inner_opts = [torch.optim.Adam(
                 inner_net_i.parameters(),
-                lr=self.hparams["lr"],
+                lr=self.hparams["lr_invenio"],
                 weight_decay=self.hparams['weight_decay']
             ) for inner_net_i in inner_net_models]
         inner_objs= [F.cross_entropy(inner_net_i(all_x), all_y) for inner_net_i in inner_net_models]
@@ -617,9 +618,11 @@ class INVENIO(ERM):
                 loss_i = F.cross_entropy(pred_i,val_minibatches[i][1])
                 grad_i = torch.autograd.grad(loss_i,self.invenio_networks[j].parameters(), allow_unused=True)
                 beta[j,i]= self.calculate_cosine_similarity_loss(inner_gradients_models[j],grad_i)
-
-        self.invenio_networks= [ self.put_gradients(self.invenio_networks[i], inner_net_models[i],num_mb)\
-            for i in range(self.num_models)]
+        for i in range(self.num_models):
+            self.put_gradients(self.invenio_networks[i], inner_net_models[i],1)
+        
+        # torch.nn.ModuleList([ self.put_gradients(self.invenio_networks[i], inner_net_models[i],1)\
+        #     for i in range(self.num_models)])
         # beta is say 2*3. take argmax along the columns. 
         models_selected = torch.argmax(beta,dim=0)#models_selected_for_each_domain
 

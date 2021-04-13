@@ -23,8 +23,8 @@ from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
-    parser.add_argument('--data_dir', type=str,default= 'DATA/')
-    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_334')
+    parser.add_argument('--data_dir', type=str,default= 'DATA')
+    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_987')
     parser.add_argument('--dataset', type=str, default="PACS")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[3])
-    parser.add_argument('--output_dir', type=str, default="train_output_PACS_INVENIO")
+    parser.add_argument('--output_dir', type=str, default="train_output_PACS_INVENIO_debug")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -216,7 +216,7 @@ if __name__ == "__main__":
 
     last_results_keys = None
     for step in range(start_step, n_steps):
-        algorithm.to(device)
+        # algorithm.to(device)
         step_start_time = time.time()
         minibatches_device = [(x.to(device), y.to(device))
             for x,y in next(train_minibatches_iterator)]
