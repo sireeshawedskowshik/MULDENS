@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 import sys
+import torch.nn.functional as F
+import torch.autograd as autograd
 from shutil import copyfile
 
 import numpy as np
@@ -133,6 +135,52 @@ def accuracy(network, loader, weights, device):
     network.train()
 
     return correct / total
+
+def calculate_cosine_similarity_loss(list_gradients1,list_gradients2):
+    cos = torch.nn.CosineSimilarity()
+    cos_params = []
+    for i,j in zip(list_gradients1,list_gradients2):
+        cos_sim = cos(i.view(1,-1),j.view(1,-1))
+        cos_params.append(cos_sim)
+    return torch.mean(torch.Tensor(cos_params))
+
+def invenio_beta_grads(loaders, test_env_loader, model_chosen, device):
+    test_env_grads = []
+    
+    for x, y in test_env_loader:
+        x = x.to(device)
+        y = y.to(device)
+        pred = model_chosen(x)
+        loss = F.cross_entropy(pred, y)
+        test_env_grads.append(torch.autograd.grad(loss, model_chosen.parameters(), allow_unused=True))
+    
+    test_grads=[]
+    for i in range(len(list(model_chosen.parameters()))):
+        corresponding = []
+        for l in test_env_grads:
+            corresponding.append(l[i])
+        test_grads.append(torch.mean(torch.stack((corresponding)), dim = 0))
+
+    loader_iterator = zip(*loaders)
+    env_grads = []
+    for step in range(32000):
+        try:
+            minibatches = [(x.to(device), y.to(device)) for x,y in next(loader_iterator)] 
+            all_x = torch.cat([x for x,y in minibatches])
+            all_y = torch.cat([y for x,y in minibatches])
+            pred = model_chosen(all_x)
+            loss = F.cross_entropy(pred, all_y)
+            env_grads.append(torch.autograd.grad(loss, model_chosen.parameters(), allow_unused=True))
+        except:
+            break
+    fenv_grads=[]
+    for i in range(len(list(model_chosen.parameters()))):
+        corresponding = []
+        for l in env_grads:
+            corresponding.append(l[i])
+        fenv_grads.append(torch.mean(torch.stack((corresponding)), dim = 0))
+    return calculate_cosine_similarity_loss(fenv_grads,test_grads)
+
 def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device):
     correct = 0
     total = 0
@@ -153,6 +201,31 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
     
     for network_i in algorithm.invenio_networks:
         network_i.eval()
+
+    # beta calculation
+    domains_selected_for_each_model=  [[] for i in range(len(algorithm.invenio_networks))]
+    model_domains = []
+    for model in range(len(algorithm.invenio_networks)):
+        for i,ms in enumerate(correct_models_selected_for_each_domain):
+            if ms is not np.nan:
+                if ms == model:
+                    domains_selected_for_each_model[model].append(i)
+        
+
+    beta = torch.zeros((1, len(algorithm.invenio_networks)))
+    for i, domain_idx in enumerate(domains_selected_for_each_model):
+        loaders = []
+        for domain in domain_idx:
+            domain_name = 'env'+str(domain)+'_out'
+            loaders.append(eval_dict[domain_name][0])
+        test_env_domain_name = 'env'+str(test_env)+'_out'
+        test_env_loader= eval_dict[test_env_domain_name][0]
+        if len(domain_idx) != 0:
+            beta[0,i] = invenio_beta_grads(loaders, test_env_loader, algorithm.invenio_networks[i], device)
+        else:
+            beta[0,i] = 0
+    
+
 
     # for observed domains, we know what models to select. So directly get the accuracies from corresponding models
     results={}

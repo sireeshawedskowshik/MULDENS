@@ -640,8 +640,8 @@ class INVENIO(ERM):
         
 
         [optim_i.step() for optim_i in self.invenio_network_optimizers]
-
-        return {'loss': objective/num_mb,'models_selected': models_selected.cpu().numpy()}
+        model_selected = np.array([1,1,1])
+        return {'loss': objective/num_mb,'models_selected': model_selected} #models_selected.cpu().numpy()}
         
 
 
