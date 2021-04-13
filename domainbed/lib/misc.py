@@ -171,7 +171,8 @@ def invenio_beta_grads(loaders, test_env_loader, model_chosen, device):
             pred = model_chosen(all_x)
             loss = F.cross_entropy(pred, all_y)
             env_grads.append(torch.autograd.grad(loss, model_chosen.parameters(), allow_unused=True))
-        except:
+        except Exception as e:
+            print(e)
             break
     fenv_grads=[]
     for i in range(len(list(model_chosen.parameters()))):
@@ -212,22 +213,24 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                     domains_selected_for_each_model[model].append(i)
         
 
-    beta = torch.zeros((1, len(algorithm.invenio_networks)))
-    for i, domain_idx in enumerate(domains_selected_for_each_model):
-        loaders = []
-        for domain in domain_idx:
-            domain_name = 'env'+str(domain)+'_out'
-            loaders.append(eval_dict[domain_name][0])
-        test_env_domain_name = 'env'+str(test_env)+'_out'
-        test_env_loader= eval_dict[test_env_domain_name][0]
-        if len(domain_idx) != 0:
-            beta[0,i] = invenio_beta_grads(loaders, test_env_loader, algorithm.invenio_networks[i], device)
-        else:
-            beta[0,i] = 0
-    
+    beta = torch.zeros((len(test_envs), len(algorithm.invenio_networks)))
+    for test_env in range(len(test_envs)):
+        for i, domain_idx in enumerate(domains_selected_for_each_model):
+            loaders = []
+            for domain in domain_idx:
+                domain_name = 'env'+str(domain)+'_out'
+                loaders.append(eval_dict[domain_name][0])
+            test_env_domain_name = 'env'+str(test_env)+'_out'
+            test_env_loader= eval_dict[test_env_domain_name][0]
+            if len(domain_idx) != 0:
+                beta[test_env,i] = invenio_beta_grads(loaders, test_env_loader, algorithm.invenio_networks[i], device)
+            else:
+                beta[test_env,i] = 0
+        
 
 
-    # for observed domains, we know what models to select. So directly get the accuracies from corresponding models
+    # for observed domains, we know what models to select. 
+    # So directly get the accuracies from corresponding models
     results={}
     for i in range(len(eval_loader_names)//2):
         if i not in test_envs:
@@ -238,6 +241,24 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                 model_num = int(correct_models_selected_for_each_domain[i])
                 acc=accuracy(algorithm.invenio_networks[model_num],loader,weights,device)
                 results[name+'_acc'] = acc
+
+    # for unobserved domains we will pick top k models from beta  and either do an ensemble or directly pick the best
+    #model and return the accuracy
+    #beta is a (num_testenvs X num_models)
+    for i,test_env in enumerate(test_envs):
+        beta_test_env = beta[i,:]
+        best_model_num = np.argmax(beta_test_env)
+        for split in ['_in','_out']:
+            name = 'env'+str(test_env)+split
+            loader= eval_dict[name][0]
+            weights= eval_dict[name][1]
+            acc=accuracy(algorithm.invenio_networks[best_model_num],loader,weights,device)
+            results[name+'_acc'] = acc
+
+
+
+
+
 
 
     return results
