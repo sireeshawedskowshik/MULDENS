@@ -115,7 +115,10 @@ def accuracy(network, loader, weights, device):
         for x, y in loader:
             x = x.to(device)
             y = y.to(device)
-            p = network.predict(x)
+            try:
+                p = network.predict(x)
+            except:
+                p = network(x)
             if weights is None:
                 batch_weights = torch.ones(len(x))
             else:
@@ -130,7 +133,85 @@ def accuracy(network, loader, weights, device):
     network.train()
 
     return correct / total
+def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device):
+    correct = 0
+    total = 0
+    weights_offset = 0 
+    eval_loader_names= list(eval_dict.keys())
+    
 
+    test_env = test_envs[0]
+
+    obs_loader_insplit_names = ['env{}_in'.format(i)
+        for i in range(len(eval_loader_names)//2) if i not in test_envs]
+    obs_loader_outsplit_names= ['env{}_out'.format(i)
+        for i in range(len(eval_loader_names)//2) if i not in test_envs]
+
+    un_obs_insplit_name = ['env{}_in'.format(i) for i in test_envs]
+    un_obs_outsplit_name = ['env{}_out'.format(i) for i in test_envs]
+
+    
+    for network_i in algorithm.invenio_networks:
+        network_i.eval()
+
+    # for observed domains, we know what models to select. So directly get the accuracies from corresponding models
+    results={}
+    for i in range(len(eval_loader_names)//2):
+        if i not in test_envs:
+            for split in ['_in','_out']:
+                name = 'env'+str(i)+split
+                loader= eval_dict[name][0]
+                weights= eval_dict[name][1]
+                model_num = int(correct_models_selected_for_each_domain[i])
+                acc=accuracy(algorithm.invenio_networks[model_num],loader,weights,device)
+                results[name+'_acc'] = acc
+
+
+    return results
+    # domains_selected_for_each_model=  [[] for i in range(len(algorithm.invenio_networks))]
+    # for m in range(len(algorithm.invenio_networks)):
+    #     for i,ms in enumerate(correct_models_selected_for_each_domain):
+    #         if ms is not np.nan:
+    #             if ms ==m:
+    #                 domains_selected_for_each_model[m].append(i)
+    # # compute betas
+    # for i, model in enumerate(algorithm.invenio_networks):
+    #     # compute gradients with the corresponding domains selected for this model
+    #     domains_selected = domains_selected_for_each_model[i]
+    #     obs_loaders= []
+    #     for d in domains_selected: # train_loader
+    #         loader_name= 'env'+str(d)+'_in'
+    #         obs_loaders.append(eval_dict[loader_name])
+
+
+
+    # with torch.no_grad():
+
+        
+
+
+
+
+
+
+    #     for x, y in loader:
+    #         x = x.to(device)
+    #         y = y.to(device)
+    #         p = network.predict(x)
+    #         if weights is None:
+    #             batch_weights = torch.ones(len(x))
+    #         else:
+    #             batch_weights = weights[weights_offset : weights_offset + len(x)]
+    #             weights_offset += len(x)
+    #         batch_weights = batch_weights.to(device)
+    #         if p.size(1) == 1:
+    #             correct += (p.gt(0).eq(y).float() * batch_weights.view(-1, 1)).sum().item()
+    #         else:
+    #             correct += (p.argmax(1).eq(y).float() * batch_weights).sum().item()
+    #         total += batch_weights.sum().item()
+    # network.train()
+
+    # return correct / total
 class Tee:
     def __init__(self, fname, mode="a"):
         self.stdout = sys.stdout

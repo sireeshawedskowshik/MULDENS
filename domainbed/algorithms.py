@@ -538,7 +538,7 @@ class INVENIO(ERM):
                 lr=self.hparams["lr_invenio"],
                 weight_decay=self.hparams['weight_decay']
             ) for network_i in self.invenio_networks]
-
+        del self.network
     def calculate_cosine_similarity_loss(self,list_gradients1,list_gradients2):
         cos = torch.nn.CosineSimilarity()
         cos_params = []
@@ -641,7 +641,7 @@ class INVENIO(ERM):
 
         [optim_i.step() for optim_i in self.invenio_network_optimizers]
 
-        return {'loss': objective/num_mb}
+        return {'loss': objective/num_mb,'models_selected': models_selected.cpu().numpy()}
         
 
 

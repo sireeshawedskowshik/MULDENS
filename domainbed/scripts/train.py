@@ -24,7 +24,7 @@ from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
     parser.add_argument('--data_dir', type=str,default= 'DATA')
-    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_987')
+    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_12')
     parser.add_argument('--dataset', type=str, default="PACS")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[3])
-    parser.add_argument('--output_dir', type=str, default="train_output_PACS_INVENIO_debug")
+    parser.add_argument('--output_dir', type=str, default="train_output_sweep_102")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -144,6 +144,10 @@ if __name__ == "__main__":
         if len(uda):
             uda_splits.append((uda, uda_weights))
 
+
+
+
+
     train_loaders = [InfiniteDataLoader(
         dataset=env,
         weights=env_weights,
@@ -180,6 +184,7 @@ if __name__ == "__main__":
         for i in range(len(out_splits))]
     eval_loader_names += ['env{}_uda'.format(i)
         for i in range(len(uda_splits))]
+    
 
     algorithm_class = algorithms.get_algorithm_class(args.algorithm)
     algorithm = algorithm_class(dataset.input_shape, dataset.num_classes,
@@ -216,7 +221,7 @@ if __name__ == "__main__":
 
     last_results_keys = None
     for step in range(start_step, n_steps):
-        # algorithm.to(device)
+        algorithm.to(device)
         step_start_time = time.time()
         minibatches_device = [(x.to(device), y.to(device))
             for x,y in next(train_minibatches_iterator)]
@@ -251,10 +256,24 @@ if __name__ == "__main__":
                 results[key] = np.mean(val)
 
             evals = zip(eval_loader_names, eval_loaders, eval_weights)
-            for name, loader, weights in evals:
-                acc = misc.accuracy(algorithm, loader, weights, device)
-                results[name+'_acc'] = acc
+            
+            if args.algorithm == 'INVENIO': 
+                eval_dict ={}
+                for name, loader, weights in evals:
+                    eval_dict[name]= [loader,weights]
+                models_selected = step_vals['models_selected']
+                correct_models_selected_for_each_domain = np.nan* np.ones(len(dataset))
+                train_envs = [ i for i in range(len(dataset)) if i not in args.test_envs]
+                for t,m in zip(train_envs,models_selected):
+                    correct_models_selected_for_each_domain[t]=m
 
+                results_invenio = misc.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device)
+                results.update(results_invenio)
+                #TODO: results[name+'_acc'] = acc
+            else:
+                for name, loader, weights in evals:
+                    acc = misc.accuracy(algorithm, loader, weights, device)
+                    results[name+'_acc'] = acc
             results_keys = sorted(results.keys())
             if results_keys != last_results_keys:
                 misc.print_row(results_keys, colwidth=12)
