@@ -74,6 +74,17 @@ class Job:
         commands = [job.command_str for job in jobs]
         launcher_fn(commands)
         print(f'Launched {len(jobs)} jobs!')
+    @staticmethod
+    def launch_with_deviceids(jobs, launcher_fn,device_ids):
+        print('Launching with given device_ids...')
+        jobs = jobs.copy()
+        #np.random.shuffle(jobs)
+        print('Making job directories:')
+        for job in tqdm.tqdm(jobs, leave=False):
+            os.makedirs(job.output_dir, exist_ok=True)
+        commands = [job.command_str for job in jobs]
+        launcher_fn(commands,device_ids)
+        print(f'Launched {len(jobs)} jobs!')
 
     @staticmethod
     def delete(jobs):
@@ -140,17 +151,17 @@ if __name__ == "__main__":
     # os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     # os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,6,7,8,9" 
     parser = argparse.ArgumentParser(description='Run a sweep')
-    parser.add_argument('command', choices=['launch', 'delete_incomplete'])
-    parser.add_argument('--datasets', nargs='+', type=str, default=DATASETS)
-    parser.add_argument('--algorithms', nargs='+', type=str, default=algorithms.ALGORITHMS)
+    parser.add_argument('--command', choices=['launch', 'delete_incomplete'],default='launch')
+    parser.add_argument('--datasets', nargs='+', type=str, default='PACS_splits')#DATASETS)
+    parser.add_argument('--algorithms', nargs='+', type=str, default='ERM')#algorithms.ALGORITHMS)
     parser.add_argument('--task', type=str, default="domain_generalization")
     parser.add_argument('--n_hparams_from', type=int, default=0)
     parser.add_argument('--n_hparams', type=int, default=20)
-    parser.add_argument('--output_dir', type=str, required=True)
-    parser.add_argument('--data_dir', type=str, required=True)
+    parser.add_argument('--output_dir', type=str,default='train_output_sweep_102')
+    parser.add_argument('--data_dir', type=str, default='')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--n_trials', type=int, default=3)
-    parser.add_argument('--command_launcher', type=str, required=True)
+    parser.add_argument('--command_launcher', type=str, default='multi_gpu')
     parser.add_argument('--steps', type=int, default=None)
     parser.add_argument('--hparams', type=str, default=None)
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
@@ -158,6 +169,7 @@ if __name__ == "__main__":
     parser.add_argument('--skip_confirmation', action='store_true')
     parser.add_argument('--use_user_defined_test_env',action='store_true')
     parser.add_argument('--user_defined_test_env',type =int, default=5)
+    parser.add_argument('--device_ids',nargs='+', type=int)
     args = parser.parse_args()
     print('args',args)
     args_list = make_args_list(
@@ -186,14 +198,19 @@ if __name__ == "__main__":
         len([j for j in jobs if j.state == Job.INCOMPLETE]),
         len([j for j in jobs if j.state == Job.NOT_LAUNCHED]))
     )
-
+    if args.device_ids:
+        device_ids = args.device_ids
     if args.command == 'launch':
         to_launch = [j for j in jobs if j.state == Job.NOT_LAUNCHED]
         print(f'About to launch {len(to_launch)} jobs.')
         if not args.skip_confirmation:
             ask_for_confirmation()
         launcher_fn = command_launchers.REGISTRY[args.command_launcher]
-        Job.launch(to_launch, launcher_fn)
+        if args.command_launcher== 'multi_gpu_device_ids':
+            print('using user defined device ids ',device_ids)
+            Job.launch_with_deviceids(to_launch, launcher_fn,device_ids)
+        else:
+            Job.launch(to_launch,launcher_fn)
 
     elif args.command == 'delete_incomplete':
         to_delete = [j for j in jobs if j.state == Job.INCOMPLETE]

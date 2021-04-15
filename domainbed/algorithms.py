@@ -640,10 +640,16 @@ class INVENIO(ERM):
         
 
         [optim_i.step() for optim_i in self.invenio_network_optimizers]
-        model_selected = np.array([1,1,1])
-        return {'loss': objective/num_mb,'models_selected': model_selected} #models_selected.cpu().numpy()}
+
+        return {'loss': objective/num_mb,'models_selected':models_selected.cpu().numpy()}
         
 
+class INVENIO_orig(INVENIO):
+    def __init__(self, input_shape, num_classes, num_domains, hparams):
+        super(INVENIO_orig, self).__init__(input_shape, num_classes, num_domains,
+                                   hparams)
+    def update(self, minibatches,val_minibatches, unlabeled=None):
+        pass
 
 
 class AbstractMMD(ERM):
@@ -892,7 +898,7 @@ class SagNet(Algorithm):
     def update(self, minibatches, unlabeled=None):
         all_x = torch.cat([x for x, y in minibatches])
         all_y = torch.cat([y for x, y in minibatches])
-
+        
         # learn content
         self.optimizer_f.zero_grad()
         self.optimizer_c.zero_grad()

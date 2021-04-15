@@ -24,7 +24,7 @@ from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
     parser.add_argument('--data_dir', type=str,default= 'DATA')
-    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_12')
+    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_234')
     parser.add_argument('--dataset', type=str, default="PACS")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
@@ -42,14 +42,15 @@ if __name__ == "__main__":
         help='Number of steps. Default is dataset-dependent.')
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
-    parser.add_argument('--test_envs', type=int, nargs='+', default=[3])
-    parser.add_argument('--output_dir', type=str, default="train_output_sweep_102")
+    parser.add_argument('--test_envs', type=int, nargs='+', default=[2])
+    parser.add_argument('--output_dir', type=str, default="train_invenio_debug")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
     parser.add_argument('--save_model_every_checkpoint', action='store_true',default=True)
+    parser.add_argument('--compute_test_beta_Invenio',default=False)
     args = parser.parse_args()
-
+    compute_test_beta= args.compute_test_beta_Invenio
     # If we ever want to implement checkpointing, just persist these values
     # every once in a while, and then load them from disk here.
     start_step = 0
@@ -220,6 +221,16 @@ if __name__ == "__main__":
 
 
     last_results_keys = None
+    if args.algorithm== 'INVENIO':
+        models_selected_all=[]
+        beta_test_all=[]
+        preds_labels={}
+        for test_env in args.test_envs:
+            for split in ['_in','_out']:
+                name = 'env'+str(test_env)+split
+                preds_labels[name+'_preds_models']=[]
+                preds_labels[name+'_labels']=[]
+
     for step in range(start_step, n_steps):
         algorithm.to(device)
         step_start_time = time.time()
@@ -262,24 +273,39 @@ if __name__ == "__main__":
                 for name, loader, weights in evals:
                     eval_dict[name]= [loader,weights]
                 models_selected = step_vals['models_selected']
+                
                 correct_models_selected_for_each_domain = np.nan* np.ones(len(dataset))
                 train_envs = [ i for i in range(len(dataset)) if i not in args.test_envs]
                 for t,m in zip(train_envs,models_selected):
                     correct_models_selected_for_each_domain[t]=m
-
-                results_invenio = misc.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device)
+                models_selected_all.append(correct_models_selected_for_each_domain)
+                results_invenio = misc.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,compute_test_beta=compute_test_beta)
+                if compute_test_beta:
+                    beta_test_all.append(results_invenio['beta_test'])
+                    del results['beta_test']
+                else:
+                    for test_env in args.test_envs:
+                        for split in ['_in','_out']:
+                            name = 'env'+str(test_env)+split
+                            preds_labels[name+'_preds_models'].append(results_invenio[name+'_preds_models'])
+                            preds_labels[name+'_labels'].append(results_invenio[name+'_labels'])
+                            del results_invenio[name+'_preds_models']
+                            del results_invenio[name+'_labels']
+                misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
                 results.update(results_invenio)
-                #TODO: results[name+'_acc'] = acc
+                
+                
+                
             else:
                 for name, loader, weights in evals:
                     acc = misc.accuracy(algorithm, loader, weights, device)
                     results[name+'_acc'] = acc
             results_keys = sorted(results.keys())
             if results_keys != last_results_keys:
-                misc.print_row(results_keys, colwidth=12)
+                misc.print_row(results_keys, colwidth=15)
                 last_results_keys = results_keys
             misc.print_row([results[key] for key in results_keys],
-                colwidth=12)
+                colwidth=15)
 
             results.update({
                 'hparams': hparams,
@@ -301,3 +327,10 @@ if __name__ == "__main__":
 
     with open(os.path.join(args.output_dir, 'done'), 'w') as f:
         f.write('done')
+    if args.algorithm == 'INVENIO':
+        if compute_test_beta:
+            misc.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
+            misc.save_obj_with_filename(beta_test_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))
+        else:
+            
+            misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))

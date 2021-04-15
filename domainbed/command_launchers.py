@@ -48,10 +48,38 @@ def multi_gpu_launcher(commands):
         if p is not None:
             p.wait()
 
+def multi_gpu_launcher_with_device_ids(commands,device_ids):
+    """
+    Launch commands on the local machine, using all GPUs in parallel.
+    """
+    print('WARNING: using experimental multi_gpu_launcher with device_ids.')
+    # import pdb
+    # pdb.set_trace()
+    n_gpus = len(device_ids)#torch.cuda.device_count()
+    procs_by_gpu = [None]*n_gpus
+
+    while len(commands) > 0:
+        for i,gpu_idx in enumerate(device_ids):
+            proc = procs_by_gpu[i]
+            if (proc is None) or (proc.poll() is not None):
+                # Nothing is running on this GPU; launch a command.
+                cmd = commands.pop(0)
+                new_proc = subprocess.Popen(
+                    f'CUDA_VISIBLE_DEVICES={gpu_idx} {cmd}', shell=True)
+                procs_by_gpu[i] = new_proc
+                break
+        time.sleep(1)
+
+    # Wait for the last few tasks to finish before returning
+    for p in procs_by_gpu:
+        if p is not None:
+            p.wait()
+
 REGISTRY = {
     'local': local_launcher,
     'dummy': dummy_launcher,
-    'multi_gpu': multi_gpu_launcher
+    'multi_gpu': multi_gpu_launcher,
+    'multi_gpu_device_ids': multi_gpu_launcher_with_device_ids
 }
 
 try:
@@ -59,3 +87,4 @@ try:
     facebook.register_command_launchers(REGISTRY)
 except ImportError:
     pass
+
