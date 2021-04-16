@@ -233,13 +233,13 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
 
     test_env = test_envs[0]
 
-    obs_loader_insplit_names = ['env{}_in'.format(i)
-        for i in range(len(eval_loader_names)//2) if i not in test_envs]
-    obs_loader_outsplit_names= ['env{}_out'.format(i)
-        for i in range(len(eval_loader_names)//2) if i not in test_envs]
+    # obs_loader_insplit_names = ['env{}_in'.format(i)
+    #     for i in range(len(eval_loader_names)//2) if i not in test_envs]
+    # obs_loader_outsplit_names= ['env{}_out'.format(i)
+    #     for i in range(len(eval_loader_names)//2) if i not in test_envs]
 
-    un_obs_insplit_name = ['env{}_in'.format(i) for i in test_envs]
-    un_obs_outsplit_name = ['env{}_out'.format(i) for i in test_envs]
+    # un_obs_insplit_name = ['env{}_in'.format(i) for i in test_envs]
+    # un_obs_outsplit_name = ['env{}_out'.format(i) for i in test_envs]
 
     
     for network_i in algorithm.invenio_networks:
