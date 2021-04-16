@@ -15,11 +15,11 @@ import torch
 import torchvision
 import torch.utils.data
 
-from domainbed import datasets
+from domainbed import datasets_aug
 from domainbed import hparams_registry
 from domainbed import algorithms
-from domainbed.lib import misc
-from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader, UnNormalize
+from domainbed.lib import misc_aug
+from domainbed.lib.fast_data_loader_aug import InfiniteDataLoader, FastDataLoader, UnNormalize
 from torchvision import transforms
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size":2}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":32}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -56,8 +56,8 @@ if __name__ == "__main__":
     algorithm_dict = None
 
     os.makedirs(args.output_dir, exist_ok=True)
-    sys.stdout = misc.Tee(os.path.join(args.output_dir, 'out.txt'))
-    sys.stderr = misc.Tee(os.path.join(args.output_dir, 'err.txt'))
+    sys.stdout = misc_aug.Tee(os.path.join(args.output_dir, 'out.txt'))
+    sys.stderr = misc_aug.Tee(os.path.join(args.output_dir, 'err.txt'))
 
     print("Environment:")
     print("\tPython: {}".format(sys.version.split(" ")[0]))
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         hparams = hparams_registry.default_hparams(args.algorithm, args.dataset)
     else:
         hparams = hparams_registry.random_hparams(args.algorithm, args.dataset,
-            misc.seed_hash(args.hparams_seed, args.trial_seed))
+            misc_aug.seed_hash(args.hparams_seed, args.trial_seed))
     if args.hparams:
         hparams.update(json.loads(args.hparams))
 
@@ -95,14 +95,14 @@ if __name__ == "__main__":
     else:
         device = "cpu"
 
-    if args.dataset in vars(datasets):
+    if args.dataset in vars(datasets_aug):
         if args.dataset=='PACS_splits': 
-            dataset = vars(datasets)[args.dataset](args.csv_root,args.data_dir,args.test_envs,hparams)
+            dataset = vars(datasets_aug)[args.dataset](args.csv_root,args.data_dir,args.test_envs,hparams)
         else:
-            dataset = vars(datasets)[args.dataset](args.data_dir,
+            dataset = vars(datasets_aug)[args.dataset](args.data_dir,
                 args.test_envs, hparams, augs = True)
             # args.dataset = 'PACS_AUGS'
-            # dataset_augs = vars(datasets)[args.dataset](args.data_dir,
+            # dataset_augs = vars(datasets_aug)[args.dataset](args.data_dir,
             #     args.test_envs, hparams)
 
     else:
@@ -129,29 +129,29 @@ if __name__ == "__main__":
         uda = []
         for tfm_idx, env in enumerate(envs):
             if env_i in args.test_envs:
-                out, in_ = misc.split_dataset(env, int(len(env)*args.holdout_fraction), misc.seed_hash(args.trial_seed, env_i))
+                out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
                 outs.append(out)
                 ins_.append(in_)
             else:
-                out, in_ = misc.split_dataset(env, int(len(env)*args.holdout_fraction), misc.seed_hash(args.trial_seed, env_i))
+                out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
                 outs.append(out)
                 if tfm_idx == 0:
                     ins_.append(in_)
 
-        # outs, in_ = [misc.split_dataset(env,
+        # outs, in_ = [misc_aug.split_dataset(env,
         #     int(len(env)*args.holdout_fraction),
-        #     misc.seed_hash(args.trial_seed, env_i)) for env in envs]
+        #     misc_aug.seed_hash(args.trial_seed, env_i)) for env in envs]
 
         if env_i in args.test_envs:
-            uda, in_ = misc.split_dataset(in_,
+            uda, in_ = misc_aug.split_dataset(in_,
                 int(len(in_)*args.uda_holdout_fraction),
-                misc.seed_hash(args.trial_seed, env_i))
+                misc_aug.seed_hash(args.trial_seed, env_i))
 
         if hparams['class_balanced']:
-            in_weights = misc.make_weights_for_balanced_classes(in_)
-            out_weights = [misc.make_weights_for_balanced_classes(out) for out in outs]
+            in_weights = misc_aug.make_weights_for_balanced_classes(in_)
+            out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs]
             if uda is not None:
-                uda_weights = misc.make_weights_for_balanced_classes(uda)
+                uda_weights = misc_aug.make_weights_for_balanced_classes(uda)
         else:
             in_weights, out_weights, uda_weights = None, None , None
         in_splits.append((ins_[0], in_weights))
@@ -287,18 +287,18 @@ if __name__ == "__main__":
                 for t,m in zip(train_envs,models_selected):
                     correct_models_selected_for_each_domain[t]=m
 
-                results_invenio = misc.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device, step, ensemble = False)
+                results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device, step, ensemble = False)
                 results.update(results_invenio)
                 #TODO: results[name+'_acc'] = acc
             else:
                 for name, loader, weights in evals:
-                    acc = misc.accuracy(algorithm, loader, weights, device)
+                    acc = misc_aug.accuracy(algorithm, loader, weights, device)
                     results[name+'_acc'] = acc
             results_keys = sorted(results.keys())
             if results_keys != last_results_keys:
-                misc.print_row(results_keys, colwidth=12)
+                misc_aug.print_row(results_keys, colwidth=12)
                 last_results_keys = results_keys
-            misc.print_row([results[key] for key in results_keys],
+            misc_aug.print_row([results[key] for key in results_keys],
                 colwidth=12)
 
             results.update({
