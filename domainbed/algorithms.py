@@ -525,7 +525,7 @@ class INVENIO(ERM):
         self.num_models= hparams['invenio_num_models']
         self.num_classes= num_classes
         
-
+       
         self.classifiers = torch.nn.ModuleList([networks.Classifier(
                             self.featurizer.n_outputs,
                             self.num_classes,

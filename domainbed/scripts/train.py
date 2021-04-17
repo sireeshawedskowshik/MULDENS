@@ -25,7 +25,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
     parser.add_argument('--data_dir', type=str,default= 'DATA')
     parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_234')
-    parser.add_argument('--dataset', type=str, default="PACS")
+    parser.add_argument('--dataset', type=str, default="VLCS")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[2])
-    parser.add_argument('--output_dir', type=str, default="train_invenio_debug")
+    parser.add_argument('--output_dir', type=str, default="train_invenio_debug_vlcs")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -302,10 +302,10 @@ if __name__ == "__main__":
                     results[name+'_acc'] = acc
             results_keys = sorted(results.keys())
             if results_keys != last_results_keys:
-                misc.print_row(results_keys, colwidth=15)
+                misc.print_row(results_keys, colwidth=20)
                 last_results_keys = results_keys
             misc.print_row([results[key] for key in results_keys],
-                colwidth=15)
+                colwidth=20)
 
             results.update({
                 'hparams': hparams,
