@@ -29,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size":2}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":32}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
     parser.add_argument('--save_model_every_checkpoint', action='store_true',default=True)
-    parser.add_argument('--compute_test_beta_Invenio',default=True)
+    parser.add_argument('--compute_test_beta_Invenio',default=False)
     args = parser.parse_args()
     compute_test_beta= args.compute_test_beta_Invenio
 
@@ -360,10 +360,10 @@ if __name__ == "__main__":
                     results[name+'_acc'] = acc
             results_keys = sorted(results.keys())
             if results_keys != last_results_keys:
-                misc_aug.print_row(results_keys, colwidth=12)
+                misc_aug.print_row(results_keys, colwidth=20)
                 last_results_keys = results_keys
             misc_aug.print_row([results[key] for key in results_keys],
-                colwidth=12)
+                colwidth=20)
 
             results.update({
                 'hparams': hparams,
