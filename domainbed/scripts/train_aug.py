@@ -8,7 +8,7 @@ import random
 import sys
 import time
 import uuid
-
+import copy
 import numpy as np
 import PIL
 import torch
@@ -268,6 +268,7 @@ if __name__ == "__main__":
     last_results_keys = None
     if args.algorithm== 'INVENIO':
         models_selected_all=[]
+        beta_train_all=[]
         beta_test_all=[]
         preds_labels={}
         for test_env in args.test_envs:
@@ -314,7 +315,8 @@ if __name__ == "__main__":
             }
 
             for key, val in checkpoint_vals.items():
-                results[key] = np.mean(val)
+                if key not in ['betas','models_selected']:
+                    results[key] = np.mean(val)
 
             evals = zip(eval_loader_names, eval_loaders, eval_weights)
             
@@ -326,16 +328,24 @@ if __name__ == "__main__":
                 train_envs = [ i for i in range(len(dataset)) if i not in args.test_envs]
                 test_out_split_idx = args.test_envs[0] * len(train_envs)
                 models_selected = step_vals['models_selected']
+                
                 # correct_models_selected_for_each_domain = np.nan* np.ones(len(dataset))
                 correct_models_selected_for_each_domain = np.nan* np.ones(len(eval_loaders)-(len(train_envs)+len(args.test_envs)))
+                
                 count = 0
                 for i in range(len(correct_models_selected_for_each_domain)):
                     if i != test_out_split_idx:
                         correct_models_selected_for_each_domain[i]=models_selected[count]
+                        
                         count += 1
                 # for t,m in zip(train_envs,models_selected):
                 #     correct_models_selected_for_each_domain[t]=m
                 models_selected_all.append(correct_models_selected_for_each_domain)
+                
+
+                beta_train_all.append(step_vals['betas'])
+                del step_vals['betas'] 
+                del step_vals['models_selected']
                 results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,compute_test_beta=compute_test_beta)
                 if compute_test_beta:
                     beta_test_all.append(results_invenio['beta_test'])
@@ -387,8 +397,9 @@ if __name__ == "__main__":
         f.write('done')
     if args.algorithm == 'INVENIO':
         if compute_test_beta:
-            misc_aug.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
+            
             misc_aug.save_obj_with_filename(beta_test_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))
         else:
-            
+            misc_aug.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
             misc_aug.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))
+            misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))
