@@ -343,7 +343,7 @@ if __name__ == "__main__":
                 models_selected_all.append(correct_models_selected_for_each_domain)
                 
 
-                beta_train_all.append(step_vals['betas'])
+                beta_train_all.append(checkpoint_vals['betas'])
                 del step_vals['betas'] 
                 del step_vals['models_selected']
                 results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,compute_test_beta=compute_test_beta)
