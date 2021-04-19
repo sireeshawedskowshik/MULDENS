@@ -209,14 +209,14 @@ if __name__ == "__main__":
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
         for env, _ in (in_splits + out_splits + uda_splits)]
-
+    to_drop_from_meta_test_out_splits = [t*(len(dataset)-len(args.test_envs)) for t in args.test_envs]
     val_loaders_invenio = [InfiniteDataLoader(
         dataset=env,
         weights=env_weights,
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
         for i, (env, env_weights) in enumerate(out_splits)
-        if i not in args.test_envs*(len(dataset)-len(args.test_envs))] # todo: 
+        if i not in to_drop_from_meta_test_out_splits] # todo: 
     eval_weights = [None for _, weights in (in_splits + out_splits + uda_splits)]
     eval_loader_names = ['env{}_in{}'.format(i, 0)
         for i in range(len(in_splits))]
