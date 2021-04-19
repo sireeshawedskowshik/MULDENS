@@ -25,7 +25,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
     parser.add_argument('--data_dir', type=str,default= 'DATA')
     parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_12')
-    parser.add_argument('--dataset', type=str, default="PACS")
+    parser.add_argument('--dataset', type=str, default="OfficeHome")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
@@ -42,8 +42,8 @@ if __name__ == "__main__":
         help='Number of steps. Default is dataset-dependent.')
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
-    parser.add_argument('--test_envs', type=int, nargs='+', default=[1])
-    parser.add_argument('--output_dir', type=str, default="invenio_pacs_aug_debug")
+    parser.add_argument('--test_envs', type=int, nargs='+', default=[2])
+    parser.add_argument('--output_dir', type=str, default="invenio_OfficeHome_aug_debug")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -138,7 +138,7 @@ if __name__ == "__main__":
                 out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
                 outs.append(out)
                 if tfm_idx == 0:
-                    ins_.append(in_)
+                    ins_.append(in_) #append only the datasets without our augs as the in splits
 
         # outs, in_ = [misc_aug.split_dataset(env,
         #     int(len(env)*args.holdout_fraction),
@@ -216,7 +216,7 @@ if __name__ == "__main__":
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
         for i, (env, env_weights) in enumerate(out_splits)
-        if i not in args.test_envs]
+        if i not in args.test_envs*(len(dataset)-len(args.test_envs))] # todo: 
     eval_weights = [None for _, weights in (in_splits + out_splits + uda_splits)]
     eval_loader_names = ['env{}_in{}'.format(i, 0)
         for i in range(len(in_splits))]
@@ -359,6 +359,7 @@ if __name__ == "__main__":
                             del results_invenio[name+'_preds_models']
                             del results_invenio[name+'_labels']
                 misc_aug.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
+                misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'betas_while_training'+str(step)+'.pkl'))
                 results.update(results_invenio)
 
                 # results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device, step, ensemble = False)
@@ -400,6 +401,6 @@ if __name__ == "__main__":
             
             misc_aug.save_obj_with_filename(beta_test_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))
         else:
-            misc_aug.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
+            misc_aug.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'final_models_selected_while_training.pkl'))
             misc_aug.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))
-            misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))
+            misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'final_beta_while_training.pkl'))

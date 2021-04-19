@@ -8,3 +8,7 @@ domainbed/facebook.py
 *.pkl
 *.json
 *done*
+*.pt
+*.sh
+*.gz
+*-ubyte

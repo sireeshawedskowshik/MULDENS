@@ -321,7 +321,7 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
         """
         if we dont want to compute betas we want to get results using all the models and also an ensemble of them
         """
-        for i,test in enumerate(test_envs):
+        for i,test_env in enumerate(test_envs):
             for split in ['_in','_out']:
                 name = 'env'+str(test_env)+split+str(0)
                 loader= eval_dict[name][0]
