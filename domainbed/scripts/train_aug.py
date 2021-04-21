@@ -25,11 +25,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
     parser.add_argument('--data_dir', type=str,default= 'DATA')
     parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_12')
-    parser.add_argument('--dataset', type=str, default="OfficeHome")
+    parser.add_argument('--dataset', type=str, default="VLCS")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size":32}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":32,"data_augmentation":0}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -43,12 +43,13 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[2])
-    parser.add_argument('--output_dir', type=str, default="invenio_OfficeHome_aug_debug")
+    parser.add_argument('--output_dir', type=str, default="invenio_VLCS_aug_debug")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
     parser.add_argument('--save_model_every_checkpoint', action='store_true',default=True)
     parser.add_argument('--compute_test_beta_Invenio',default=False)
+    parser.add_argument('--out_augs',default=True, help = "augmentations for out splits of observed domains")
     args = parser.parse_args()
     compute_test_beta= args.compute_test_beta_Invenio
 
@@ -102,10 +103,7 @@ if __name__ == "__main__":
             dataset = vars(datasets_aug)[args.dataset](args.csv_root,args.data_dir,args.test_envs,hparams)
         else:
             dataset = vars(datasets_aug)[args.dataset](args.data_dir,
-                args.test_envs, hparams, augs = True)
-            # args.dataset = 'PACS_AUGS'
-            # dataset_augs = vars(datasets_aug)[args.dataset](args.data_dir,
-            #     args.test_envs, hparams)
+                args.test_envs, hparams, out_augs = True)
 
     else:
         raise NotImplementedError
@@ -138,12 +136,9 @@ if __name__ == "__main__":
                 out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
                 outs.append(out)
                 if tfm_idx == 0:
-                    ins_.append(in_) #append only the datasets without our augs as the in splits
+                    ins_.append(in_) #append only the datasets without our out_augs as the in splits
 
-        # outs, in_ = [misc_aug.split_dataset(env,
-        #     int(len(env)*args.holdout_fraction),
-        #     misc_aug.seed_hash(args.trial_seed, env_i)) for env in envs]
-
+        
         if env_i in args.test_envs:
             uda, in_ = misc_aug.split_dataset(in_,
                 int(len(in_)*args.uda_holdout_fraction),
