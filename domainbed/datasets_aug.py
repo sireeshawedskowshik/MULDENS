@@ -88,7 +88,7 @@ class myImageList(Dataset):
 class MultipleDomainDataset:
     N_STEPS = 5001           # Default, subclasses may override
     CHECKPOINT_FREQ = 100    # Default, subclasses may override
-    N_WORKERS = 0           # Default, subclasses may override
+    N_WORKERS = 8           # Default, subclasses may override
     ENVIRONMENTS = None      # Subclasses should override
     INPUT_SHAPE = None       # Subclasses should override
 
@@ -216,8 +216,101 @@ class RotatedMNIST(MultipleEnvironmentMNIST):
 
         return TensorDataset(x, y)
 
+# class MultipleEnvironmentImageFolder(MultipleDomainDataset):
+#     def __init__(self, root, test_envs, augment, hparams, out_augs = False):
+#         super().__init__()
+#         environments = [f.name for f in os.scandir(root) if f.is_dir()]
+#         environments = sorted(environments)
+
+#         transform = transforms.Compose([
+#             transforms.Resize((224,224)),
+#             transforms.ToTensor(),
+#             transforms.Normalize(
+#                 mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+#         ])
+
+#         augment_transform = transforms.Compose([
+#             # transforms.Resize((224,224)),
+#             transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+#             transforms.RandomHorizontalFlip(),
+#             transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+#             transforms.RandomGrayscale(),
+#             transforms.ToTensor(),
+#             transforms.Normalize(
+#                 mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+#         ])
+        
+        
+
+
+#         if out_augs:
+#             augment_transform1 = transforms.Compose([
+#             transforms.Resize((224,224)),
+#             transforms.RandomHorizontalFlip(1.),
+#             transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+#             transforms.ToTensor(),
+#             transforms.Normalize(
+#                 mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
+
+#             augment_transform2 = transforms.Compose([
+#             transforms.Resize((224,224)),
+#             transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+#             transforms.RandomGrayscale(1.),
+#             transforms.ToTensor(),
+#             transforms.Normalize(
+#                 mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
+
+            
+
+#         self.datasets = []
+#         for i, environment in enumerate(environments):
+
+
+#             if out_augs:
+#                 if augment and (i not in test_envs):
+#                     path = os.path.join(root, environment)
+#                     env_dataset = ImageFolder(path, transform=augment_transform)
+#                     env_dataset1 = ImageFolder(path, transform=augment_transform1)
+#                     env_dataset2 = ImageFolder(path,transform=augment_transform2)
+#                     self.datasets.append([env_dataset, env_dataset1, env_dataset2])
+#                 else:
+#                     path = os.path.join(root, environment)
+#                     env_dataset = ImageFolder(path,transform=transform)
+#                     self.datasets.append([env_dataset])
+
+#             else:
+#                 if augment and (i not in test_envs):
+#                     env_transform = augment_transform
+#                 else:
+#                     env_transform = transform
+
+#                 path = os.path.join(root, environment)
+#                 env_dataset = ImageFolder(path, transform=env_transform)
+
+#                 self.datasets.append(env_dataset)
+#         if out_augs:
+#             self.input_shape = (3, 224, 224,)
+#             self.num_classes = len(self.datasets[-1][0].classes)
+#         else:
+#             self.input_shape = (3, 224, 224,)
+#             self.num_classes = len(self.datasets[-1].classes)
 class MultipleEnvironmentImageFolder(MultipleDomainDataset):
-    def __init__(self, root, test_envs, augment, hparams, augs = False):
+    """
+    A much simpler version of the augmentation pipeline for out/val splits in the observed domains
+    Takes two main arguments 
+    1. hparams['data_augmentation'] - this param is for applying the DomainBed;s augmentations in in/train splits
+    of observed domains
+    2. out_augs- this is for defining our own augmentations for the observed domains
+    We have observed, not too surprisingly that applying both (as 2 is a subset of 1) our version of ERM++ didnt improve results
+    
+    We want to also experiment without 1 and only two.
+
+    Ofcourse now augmentation at all for the test envs.
+
+    """
+
+
+    def __init__(self, root, test_envs, augment, hparams, out_augs = False):
         super().__init__()
         environments = [f.name for f in os.scandir(root) if f.is_dir()]
         environments = sorted(environments)
@@ -239,60 +332,60 @@ class MultipleEnvironmentImageFolder(MultipleDomainDataset):
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
-        
-        
 
+        augment_transform1 = transforms.Compose([
+        transforms.Resize((224,224)),
+        transforms.RandomHorizontalFlip(1.),
+        transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
 
-        if augs:
-            augment_transform1 = transforms.Compose([
-            transforms.Resize((224,224)),
-            transforms.RandomHorizontalFlip(1.),
-            transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
-
-            augment_transform2 = transforms.Compose([
-            transforms.Resize((224,224)),
-            transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
-            transforms.RandomGrayscale(1.),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
+        augment_transform2 = transforms.Compose([
+        transforms.Resize((224,224)),
+        transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+        transforms.RandomGrayscale(1.),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
 
             
 
         self.datasets = []
         for i, environment in enumerate(environments):
-
-            if augs:
-                if augment and (i not in test_envs):
+            if i not in test_envs:
+                if augment :
+                    to_append =[]
                     path = os.path.join(root, environment)
                     env_dataset = ImageFolder(path, transform=augment_transform)
-                    env_dataset1 = ImageFolder(path, transform=augment_transform1)
-                    env_dataset2 = ImageFolder(path,transform=augment_transform2)
-                    self.datasets.append([env_dataset, env_dataset1, env_dataset2])
+                    to_append.append(env_dataset)
+                    if out_augs:
+                        env_dataset1 = ImageFolder(path, transform=augment_transform1)
+                        env_dataset2 = ImageFolder(path,transform=augment_transform2)
+                        to_append.append(env_dataset1)
+                        to_append.append(env_dataset2)
+                    self.datasets.append(to_append)
                 else:
+                    to_append =[]
                     path = os.path.join(root, environment)
-                    env_dataset = ImageFolder(path,transform=transform)
-                    self.datasets.append([env_dataset])
-
+                    env_dataset = ImageFolder(path, transform=transform)
+                    to_append.append(env_dataset)
+                    if out_augs:
+                        env_dataset1 = ImageFolder(path, transform=augment_transform1)
+                        env_dataset2 = ImageFolder(path,transform=augment_transform2)
+                        to_append.append(env_dataset1)
+                        to_append.append(env_dataset2)
+                    self.datasets.append(to_append)
             else:
-                if augment and (i not in test_envs):
-                    env_transform = augment_transform
-                else:
-                    env_transform = transform
-
                 path = os.path.join(root, environment)
-                env_dataset = ImageFolder(path, transform=env_transform)
+                env_dataset = ImageFolder(path, transform=transform)
+                self.datasets.append([env_dataset])
+                self.num_classes= len(env_dataset.classes)
+        self.input_shape = (3, 224, 224,)   
+        
 
-                self.datasets.append(env_dataset)
-        if augs:
-            self.input_shape = (3, 224, 224,)
-            self.num_classes = len(self.datasets[-1][0].classes)
-        else:
-            self.input_shape = (3, 224, 224,)
-            self.num_classes = len(self.datasets[-1].classes)
+
+
 class MultipleEnvironmentImageLIST(MultipleDomainDataset):
     def __init__(self, csv_root,data_root, test_envs, augment, hparams):
         super().__init__()
@@ -341,16 +434,16 @@ class MultipleEnvironmentImageLIST(MultipleDomainDataset):
 class VLCS(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 300
     ENVIRONMENTS = ["C", "L", "S", "V"]
-    def __init__(self, root, test_envs, hparams, augs):
+    def __init__(self, root, test_envs, hparams, out_augs):
         self.dir = os.path.join(root, "VLCS/")
-        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, augs)
+        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, out_augs)
 
 class PACS(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 300
     ENVIRONMENTS = ["A", "C", "P", "S"]
-    def __init__(self, root, test_envs, hparams, augs):
+    def __init__(self, root, test_envs, hparams, out_augs):
         self.dir = os.path.join(root, "PACS/")
-        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, augs)
+        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, out_augs)
 class PACS_splits(MultipleEnvironmentImageLIST):
     CHECKPOINT_FREQ = 1
     ENVIRONMENTS= ['domain_0','domain_1','domain_2','domain_3','domain_4','sketch']
@@ -368,16 +461,16 @@ class DomainNet(MultipleEnvironmentImageFolder):
 class OfficeHome(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 300
     ENVIRONMENTS = ["A", "C", "P", "R"]
-    def __init__(self, root, test_envs, hparams, augs):
+    def __init__(self, root, test_envs, hparams, out_augs):
         self.dir = os.path.join(root, "office_home/")
-        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, augs)
+        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, out_augs)
 
 class TerraIncognita(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 300
     ENVIRONMENTS = ["L100", "L38", "L43", "L46"]
-    def __init__(self, root, test_envs, hparams, augs):
+    def __init__(self, root, test_envs, hparams, out_augs):
         self.dir = os.path.join(root, "terra_incognita/")
-        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, augs)
+        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams, out_augs)
 
 class SVIRO(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 300
