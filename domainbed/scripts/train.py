@@ -24,12 +24,12 @@ from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
     parser.add_argument('--data_dir', type=str,default= 'DATA')
-    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_234')
-    parser.add_argument('--dataset', type=str, default="VLCS")
+    parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_334')
+    parser.add_argument('--dataset', type=str, default="OfficeHome")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size":32}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":32,"data_augmentation":1}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[2])
-    parser.add_argument('--output_dir', type=str, default="train_invenio_debug_vlcs")
+    parser.add_argument('--output_dir', type=str, default="invenio_OfficeHome_noaug_debug")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -167,7 +167,7 @@ if __name__ == "__main__":
 
     eval_loaders = [FastDataLoader(
         dataset=env,
-        batch_size=64,
+        batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
         for env, _ in (in_splits + out_splits + uda_splits)]
 
@@ -222,6 +222,7 @@ if __name__ == "__main__":
 
     last_results_keys = None
     if args.algorithm== 'INVENIO':
+        beta_train_all=[]
         models_selected_all=[]
         beta_test_all=[]
         preds_labels={}
@@ -264,7 +265,8 @@ if __name__ == "__main__":
             }
 
             for key, val in checkpoint_vals.items():
-                results[key] = np.mean(val)
+                if key not in ['betas','models_selected']:
+                    results[key] = np.mean(val)
 
             evals = zip(eval_loader_names, eval_loaders, eval_weights)
             
@@ -280,6 +282,9 @@ if __name__ == "__main__":
                     correct_models_selected_for_each_domain[t]=m
                 models_selected_all.append(correct_models_selected_for_each_domain)
                 results_invenio = misc.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,compute_test_beta=compute_test_beta)
+                beta_train_all.append(checkpoint_vals['betas'])
+                del step_vals['betas']
+                del step_vals['models_selected']
                 if compute_test_beta:
                     beta_test_all.append(results_invenio['beta_test'])
                     del results['beta_test']
@@ -292,6 +297,7 @@ if __name__ == "__main__":
                             del results_invenio[name+'_preds_models']
                             del results_invenio[name+'_labels']
                 misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
+                misc.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'betas_while_training'+str(step)+'.pkl'))
                 results.update(results_invenio)
                 
                 
@@ -328,9 +334,9 @@ if __name__ == "__main__":
     with open(os.path.join(args.output_dir, 'done'), 'w') as f:
         f.write('done')
     if args.algorithm == 'INVENIO':
+
+        misc.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
+        misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))
+        misc.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'final_beta_while_training.pkl'))
         if compute_test_beta:
-            misc.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
             misc.save_obj_with_filename(beta_test_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))
-        else:
-            
-            misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))
