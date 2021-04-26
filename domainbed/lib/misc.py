@@ -217,7 +217,7 @@ def ensemble_accuracy(networks, loader, weights, device):
     return_dict['preds']= np.concatenate(predictions_,axis=1)
     return_dict['labels']= np.concatenate(labels_)
     return return_dict
-def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device,compute_test_beta):
+def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device,acc_flags):
     compute_test_beta=acc_flags['compute_test_beta'] # setting this to false will give you ensemble
     ensemble_for_obs= acc_flags['ensemble_for_obs']
     
