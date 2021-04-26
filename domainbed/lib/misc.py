@@ -218,7 +218,9 @@ def ensemble_accuracy(networks, loader, weights, device):
     return_dict['labels']= np.concatenate(labels_)
     return return_dict
 def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device,compute_test_beta):
-
+    compute_test_beta=acc_flags['compute_test_beta'] # setting this to false will give you ensemble
+    ensemble_for_obs= acc_flags['ensemble_for_obs']
+    
     correct = 0
     total = 0
     weights_offset = 0 
@@ -248,71 +250,78 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                 if ms == model:
                     domains_selected_for_each_model[model].append(i)
     # for observed domains, we know what models to select. 
-    # So directly get the accuracies from corresponding models
-    
-    results={}
-    for i in range(len(eval_loader_names)//2):
-        if i not in test_envs:
+    # So directly get the accuracies from corresponding model
+    if ensemble_for_obs:# ensemble for both observed and unobserved domains
+        results ={}
+        for i in range(len(eval_loader_names)//2):
             for split in ['_in','_out']:
+                
                 name = 'env'+str(i)+split
                 loader= eval_dict[name][0]
                 weights= eval_dict[name][1]
-                model_num = int(correct_models_selected_for_each_domain[i])
-                acc=accuracy(algorithm.invenio_networks[model_num],loader,weights,device)
-                results[name+'_acc'] = acc
-    # for unobserved domains we will pick top k models from beta  and either do an ensemble or directly pick the best
-    #model and return the accuracy
-    #beta is a (num_testenvs X num_models)
-    if compute_test_beta:
-        beta = torch.zeros((len(test_envs), len(algorithm.invenio_networks)))
-        for test_env in range(len(test_envs)):
-            for i, domain_idx in enumerate(domains_selected_for_each_model):
-                loaders = []
-                for domain in domain_idx:
-                    domain_name = 'env'+str(domain)+'_out'
-                    loaders.append(eval_dict[domain_name][0])
-                test_env_domain_name = 'env'+str(test_env)+'_out'
-                test_env_loader= eval_dict[test_env_domain_name][0]
-                if len(domain_idx) != 0:
-                    beta[test_env,i] = invenio_beta_grads(loaders, test_env_loader, algorithm.invenio_networks[i], device)
-                else:
-                    beta[test_env,i] = 0
-        for i,test_env in enumerate(test_envs):
-            beta_test_env = beta[i,:]
-            best_model_num = np.argmax(beta_test_env)
-            for split in ['_in','_out']:
-                name = 'env'+str(test_env)+split
-                loader= eval_dict[name][0]
-                weights= eval_dict[name][1]
-                acc=accuracy(algorithm.invenio_networks[best_model_num],loader,weights,device)
-                results[name+'_acc'] = acc
-        results['beta_test']= beta
-    else:
-        """
-        if we dont want to compute betas we want to get results using all the models and also an ensemble of them
-        """
-        for i,test in enumerate(test_envs):
-            for split in ['_in','_out']:
-                name = 'env'+str(test_env)+split
-                loader= eval_dict[name][0]
-                weights= eval_dict[name][1]
-                for m in range(len(algorithm.invenio_networks)):
-                    acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
-                    results[name+'_m_'+str(m)+'_acc'] = acc
+
+                # for m in range(len(algorithm.invenio_networks)):
+                #         acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
+                #         results[name+'_m_'+str(m)+'_acc'] = acc
                 ensemble_results= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
+                if i in test_envs:name = 'unobs_'+name 
                 results[name+'_ens_acc']= ensemble_results['acc']
                 results[name+'_preds_models']= ensemble_results['preds']
                 results[name+'_labels']= ensemble_results['labels']
-
-
-
-                #saving the predictions
-
-                
-
-
-
-
+    else:
+        results={}
+        for i in range(len(eval_loader_names)//2):
+            if i not in test_envs:
+                for split in ['_in','_out']:
+                    name = 'env'+str(i)+split
+                    loader= eval_dict[name][0]
+                    weights= eval_dict[name][1]
+                    model_num = int(correct_models_selected_for_each_domain[i])
+                    acc=accuracy(algorithm.invenio_networks[model_num],loader,weights,device)
+                    results[name+'_acc'] = acc
+        # for unobserved domains we will pick top k models from beta  and either do an ensemble or directly pick the best
+        #model and return the accuracy
+        #beta is a (num_testenvs X num_models)
+        if compute_test_beta:
+            beta = torch.zeros((len(test_envs), len(algorithm.invenio_networks)))
+            for test_env in range(len(test_envs)):
+                for i, domain_idx in enumerate(domains_selected_for_each_model):
+                    loaders = []
+                    for domain in domain_idx:
+                        domain_name = 'env'+str(domain)+'_out'
+                        loaders.append(eval_dict[domain_name][0])
+                    test_env_domain_name = 'env'+str(test_env)+'_out'
+                    test_env_loader= eval_dict[test_env_domain_name][0]
+                    if len(domain_idx) != 0:
+                        beta[test_env,i] = invenio_beta_grads(loaders, test_env_loader, algorithm.invenio_networks[i], device)
+                    else:
+                        beta[test_env,i] = 0
+            for i,test_env in enumerate(test_envs):
+                beta_test_env = beta[i,:]
+                best_model_num = np.argmax(beta_test_env)
+                for split in ['_in','_out']:
+                    name = 'env'+str(test_env)+split
+                    loader= eval_dict[name][0]
+                    weights= eval_dict[name][1]
+                    acc=accuracy(algorithm.invenio_networks[best_model_num],loader,weights,device)
+                    results[name+'_acc'] = acc
+            results['beta_test']= beta
+        else:
+            """
+            if we dont want to compute betas we want to get results using all the models and also an ensemble of them
+            """
+            for i,test in enumerate(test_envs):
+                for split in ['_in','_out']:
+                    name = 'env'+str(test_env)+split
+                    loader= eval_dict[name][0]
+                    weights= eval_dict[name][1]
+                    for m in range(len(algorithm.invenio_networks)):
+                        acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
+                        results[name+'_m_'+str(m)+'_acc'] = acc
+                    ensemble_results= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
+                    results[name+'_ens_acc']= ensemble_results['acc']
+                    results[name+'_preds_models']= ensemble_results['preds']
+                    results[name+'_labels']= ensemble_results['labels']
     return results
     # domains_selected_for_each_model=  [[] for i in range(len(algorithm.invenio_networks))]
     # for m in range(len(algorithm.invenio_networks)):
