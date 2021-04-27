@@ -29,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size":32,"data_augmentation":1}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":32,"data_augmentation":1, "lr_invenio":1e-3}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument('--skip_model_save', action='store_true')
     parser.add_argument('--save_model_every_checkpoint', action='store_true',default=True)
     parser.add_argument('--compute_test_beta_Invenio',default=False)
+    parser.add_argument('--split_indata',default = True)
     args = parser.parse_args()
     compute_test_beta= args.compute_test_beta_Invenio
     # If we ever want to implement checkpointing, just persist these values
@@ -121,12 +122,20 @@ if __name__ == "__main__":
     in_splits = []
     out_splits = []
     uda_splits = []
+    in_val_splits=[]
     for env_i, env in enumerate(dataset):
         uda = []
 
         out, in_ = misc.split_dataset(env,
             int(len(env)*args.holdout_fraction),
             misc.seed_hash(args.trial_seed, env_i))
+        
+        # divide in_ into again in_ and in_val for meta_train
+        if args.split_indata:
+            if env_i not in args.test_envs:
+                in_val, in_ = misc.split_dataset(in_,
+                    int(len(in_)*args.holdout_fraction),
+                    misc.seed_hash(args.trial_seed, env_i))
 
         if env_i in args.test_envs:
             uda, in_ = misc.split_dataset(in_,
@@ -139,9 +148,16 @@ if __name__ == "__main__":
             if uda is not None:
                 uda_weights = misc.make_weights_for_balanced_classes(uda)
         else:
-            in_weights, out_weights, uda_weights = None, None, None
+            in_weights,in_val_weights, out_weights, uda_weights = None, None,None, None
         in_splits.append((in_, in_weights))
         out_splits.append((out, out_weights))
+        
+        if args.split_indata:
+            if env_i in args.test_envs:
+                in_val_splits.append((None,None))
+            else:
+                in_val_splits.append((in_val, in_val_weights))
+                
         if len(uda):
             uda_splits.append((uda, uda_weights))
 
@@ -170,13 +186,16 @@ if __name__ == "__main__":
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
         for env, _ in (in_splits + out_splits + uda_splits)]
-
+    if args.split_indata: 
+        invenio_mata_out_splits = in_val_splits
+    else: 
+        invenio_mata_out_splits = out_splits
     val_loaders_invenio = [InfiniteDataLoader(
         dataset=env,
         weights=env_weights,
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
-        for i, (env, env_weights) in enumerate(out_splits)
+        for i, (env, env_weights) in enumerate(invenio_mata_out_splits)
         if i not in args.test_envs]
     eval_weights = [None for _, weights in (in_splits + out_splits + uda_splits)]
     eval_loader_names = ['env{}_in'.format(i)
@@ -231,7 +250,7 @@ if __name__ == "__main__":
                 name = 'env'+str(test_env)+split
                 preds_labels[name+'_preds_models']=[]
                 preds_labels[name+'_labels']=[]
-
+    acc_flags={'ensemble_for_obs':True,'compute_test_beta':False}
     for step in range(start_step, n_steps):
         algorithm.to(device)
         step_start_time = time.time()
@@ -281,23 +300,23 @@ if __name__ == "__main__":
                 for t,m in zip(train_envs,models_selected):
                     correct_models_selected_for_each_domain[t]=m
                 models_selected_all.append(correct_models_selected_for_each_domain)
-                results_invenio = misc.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,compute_test_beta=compute_test_beta)
+                results_invenio = misc.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,acc_flags)
                 beta_train_all.append(checkpoint_vals['betas'])
                 del step_vals['betas']
                 del step_vals['models_selected']
-                if compute_test_beta:
-                    beta_test_all.append(results_invenio['beta_test'])
-                    del results['beta_test']
-                else:
-                    for test_env in args.test_envs:
-                        for split in ['_in','_out']:
-                            name = 'env'+str(test_env)+split
-                            preds_labels[name+'_preds_models'].append(results_invenio[name+'_preds_models'])
-                            preds_labels[name+'_labels'].append(results_invenio[name+'_labels'])
-                            del results_invenio[name+'_preds_models']
-                            del results_invenio[name+'_labels']
-                misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
-                misc.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'betas_while_training'+str(step)+'.pkl'))
+                # if compute_test_beta:
+                #     beta_test_all.append(results_invenio['beta_test'])
+                #     del results['beta_test']
+                # else:
+                #     for test_env in args.test_envs:
+                #         for split in ['_in','_out']:
+                #             name = 'unobs_env'+str(test_env)+split
+                #             preds_labels[name+'_preds_models'].append(results_invenio[name+'_preds_models'])
+                #             preds_labels[name+'_labels'].append(results_invenio[name+'_labels'])
+                #             del results_invenio[name+'_preds_models']
+                #             del results_invenio[name+'_labels']
+                #misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
+                #misc.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'betas_while_training'+str(step)+'.pkl'))
                 results.update(results_invenio)
                 
                 
@@ -308,10 +327,10 @@ if __name__ == "__main__":
                     results[name+'_acc'] = acc
             results_keys = sorted(results.keys())
             if results_keys != last_results_keys:
-                misc.print_row(results_keys, colwidth=20)
+                misc.print_row(results_keys, colwidth=25)
                 last_results_keys = results_keys
             misc.print_row([results[key] for key in results_keys],
-                colwidth=20)
+                colwidth=25)
 
             results.update({
                 'hparams': hparams,
@@ -335,8 +354,8 @@ if __name__ == "__main__":
         f.write('done')
     if args.algorithm == 'INVENIO':
 
-        misc.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
-        misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))
-        misc.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'final_beta_while_training.pkl'))
+        # misc.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'models_selected_while_training.pkl'))
+        # misc.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))
+        # misc.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'final_beta_while_training.pkl'))
         if compute_test_beta:
             misc.save_obj_with_filename(beta_test_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))

@@ -251,7 +251,7 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                     domains_selected_for_each_model[model].append(i)
     # for observed domains, we know what models to select. 
     # So directly get the accuracies from corresponding model
-    if ensemble_for_obs:# ensemble for both observed and unobserved domains
+    if ensemble_for_obs:# ensemble and individual for both observed and unobserved domains
         results ={}
         for i in range(len(eval_loader_names)//2):
             for split in ['_in','_out']:
@@ -259,15 +259,20 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                 name = 'env'+str(i)+split
                 loader= eval_dict[name][0]
                 weights= eval_dict[name][1]
-
+                if i in test_envs: name = 'unobs_'+name
+                for m in range(len(algorithm.invenio_networks)):
+                    acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
+                     
+                    results[name+'_m_'+str(m)+'_acc'] = acc
                 # for m in range(len(algorithm.invenio_networks)):
                 #         acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
                 #         results[name+'_m_'+str(m)+'_acc'] = acc
                 ensemble_results= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
-                if i in test_envs:name = 'unobs_'+name 
+                
                 results[name+'_ens_acc']= ensemble_results['acc']
-                results[name+'_preds_models']= ensemble_results['preds']
-                results[name+'_labels']= ensemble_results['labels']
+                # results[name+'_preds_models']= ensemble_results['preds']
+                # results[name+'_labels']= ensemble_results['labels']
+
     else:
         results={}
         for i in range(len(eval_loader_names)//2):
