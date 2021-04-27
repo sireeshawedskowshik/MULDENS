@@ -238,9 +238,9 @@ if __name__ == "__main__":
             dump["model_hparams"])
         algorithm.load_state_dict(dump["model_dict"])
         return algorithm
-    ckpt_names = sorted([os.path.join(args.output_dir,f) for f in os.listdir(args.output_dir) if 'model' in f])
+    ckpt_names = [os.path.join(args.output_dir,f) for f in os.listdir(args.output_dir) if 'model' in f and 'preds' not in f and 'selected' not in f] 
     ckpt_names.remove(os.path.join(args.output_dir,'model.pkl'))# remove the last checkpoint as it is already saved
-    
+    ckpt_names= sorted(ckpt_names,key= lambda x: int(x.split(args.output_dir)[1].split('model_')[1].split('step')[1].strip('.pkl')))
     for i in range(len(ckpt_names)):
         algorithm = load_model(ckpt_names[i])
         algorithm= algorithm.to(device)
