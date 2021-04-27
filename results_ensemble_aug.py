@@ -3,9 +3,11 @@ import numpy as np
 for test_env in range(4):
     total_train_val_domains = 3
 
-    out_file = 'Inevnio_validation_aug/VLCS_M3/env'+str(test_env)+'_no_train_aug/indiv_ensemble_no_beta/out copy.txt'
+    out_file = 'Inevnio_validation_aug_with_train_aug/TerraIncognita_M3/env'+str(test_env)+'_with_train_aug/indiv_ensemble_no_beta/out copy.txt'
+    #out_file = 'Inevnio_validation_aug_with_train_aug/TerraIncognita_M2/env'+str(test_env)+'_with_train_aug/indiv_ensemble_no_beta/out copy.txt'
+
     out_df= pd.read_fwf(out_file)
-    out_df= out_df[out_df['epoch']>0]
+    out_df= out_df[out_df['epoch']<44]
     train_envs = np.setdiff1d(np.arange(4),test_env)
     train_out_split_names= ['env'+str(i)+'_out' + str(j)+'_acc' for i in train_envs for j in range(1,total_train_val_domains)]
     
