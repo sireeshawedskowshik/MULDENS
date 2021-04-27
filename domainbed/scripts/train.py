@@ -29,7 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size":32,"data_augmentation":1, "lr_invenio":1e-3}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":32,"data_augmentation":1, "lr_invenio":5e-5}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')

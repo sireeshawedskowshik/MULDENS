@@ -122,7 +122,7 @@ def _hparams(algorithm, dataset, random_seed):
     elif algorithm in ['DANN', 'CDANN']:
         _hparam('weight_decay_g', 0., lambda r: 10**r.uniform(-6, -2) )
     if algorithm in ['INVENIO']:
-        _hparam('invenio_num_models',2, lambda r: r.randint(3,size=1))
+        _hparam('invenio_num_models',3, lambda r: r.randint(3,size=1))
     if algorithm in ['INVENIO']:    
         _hparam('lr_invenio', 5e-5, lambda r: 10**r.uniform(-5, -3.5))
 
