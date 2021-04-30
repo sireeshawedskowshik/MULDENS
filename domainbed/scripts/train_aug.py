@@ -18,7 +18,7 @@ import torch.utils.data
 from domainbed import datasets_aug
 from domainbed import hparams_registry
 from domainbed import algorithms
-from domainbed.lib import misc_aug
+from domainbed.lib import misc_aug,misc
 from domainbed.lib.fast_data_loader_aug import InfiniteDataLoader, FastDataLoader, UnNormalize
 from torchvision import transforms
 if __name__ == "__main__":
@@ -42,7 +42,7 @@ if __name__ == "__main__":
         help='Number of steps. Default is dataset-dependent.')
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
-    parser.add_argument('--test_envs', type=int, nargs='+', default=[2])
+    parser.add_argument('--test_envs', type=int, nargs='+', default=[1])
     parser.add_argument('--output_dir', type=str, default="invenio_VLCS_aug_debug")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
@@ -50,6 +50,8 @@ if __name__ == "__main__":
     parser.add_argument('--save_model_every_checkpoint', action='store_true',default=True)
     parser.add_argument('--compute_test_beta_Invenio',default=False)
     parser.add_argument('--out_augs',default=True, help = "augmentations for out splits of observed domains")
+    parser.add_argument('--split_indata',default=True,help="create held out validation \
+        and use a portion of train data as meta test")
     args = parser.parse_args()
     compute_test_beta= args.compute_test_beta_Invenio
 
@@ -120,44 +122,92 @@ if __name__ == "__main__":
     # domain generalization and domain adaptation results, then domain
     # generalization algorithms should create the same 'uda-splits', which will
     # be discared at training.
-    in_splits = []
-    out_splits = []
-    uda_splits = []
-    for env_i, envs in enumerate(dataset):
-        outs = []
-        ins_ = []
-        uda = []
-        for tfm_idx, env in enumerate(envs):
+    if args.split_indata:
+        in_splits = []
+        out_splits = []
+        uda_splits = []
+        in_val_splits=[]
+        for env_i, envs in enumerate(dataset):
+            in_vals = []
+            ins_ = []
+            uda = []
+            for tfm_idx, env in enumerate(envs):
+                if env_i in args.test_envs:
+                    out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
+                    #outs.append(out)
+                    ins_.append(in_)
+                else: # traain_env
+                    out, in_ = misc.split_dataset(env,
+                        int(len(env)*args.holdout_fraction),
+                        misc.seed_hash(args.trial_seed, env_i))
+                    in_val, in_ = misc_aug.split_dataset(in_, int(len(in_)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
+                    in_vals.append(in_val)
+                    if tfm_idx == 0:
+                        ins_.append(in_) #append only the datasets without our out_augs as the in splits
+                    
+            
             if env_i in args.test_envs:
-                out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
-                outs.append(out)
-                ins_.append(in_)
+                uda, in_ = misc_aug.split_dataset(in_,
+                    int(len(in_)*args.uda_holdout_fraction),
+                    misc_aug.seed_hash(args.trial_seed, env_i))
+
+            if hparams['class_balanced']:
+                in_weights = misc_aug.make_weights_for_balanced_classes(in_)
+                out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs]
+                if uda is not None:
+                    uda_weights = misc_aug.make_weights_for_balanced_classes(uda)
             else:
-                out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
-                outs.append(out)
-                if tfm_idx == 0:
-                    ins_.append(in_) #append only the datasets without our out_augs as the in splits
+                in_weights,in_val_weights, out_weights, uda_weights = None, None, None , None
+            in_splits.append((ins_[0], in_weights))
+            out_splits.append((out,out_weights))
+            in_val_splits.append([(in_vals[i], in_val_weights) for i in range(len(in_vals))])
+            if len(uda):
+                uda_splits.append((uda, uda_weights))
+        
+        orig_in_val_splits = in_val_splits
+        in_val_splits = [item for sublist in in_val_splits for item in sublist]
+#     in_splits = []
+#     out_splits = []
+#     uda_splits = []
+#     for env_i, envs in enumerate(dataset):
+#         outs = []
+#         ins_ = []
+#         uda = []
+#         for tfm_idx, env in enumerate(envs):
+#             if env_i in args.test_envs:
+#                 out, in_ = misc.split_dataset(env,
+#                             int(len(env)*args.holdout_fraction),
+#                             misc.seed_hash(args.trial_seed, env_i))
+                
+#                 out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
+#                 outs.append(out)
+#                 ins_.append(in_)
+#             else:
+#                 out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
+#                 outs.append(out)
+#                 if tfm_idx == 0:
+#                     ins_.append(in_) #append only the datasets without our out_augs as the in splits
 
         
-        if env_i in args.test_envs:
-            uda, in_ = misc_aug.split_dataset(in_,
-                int(len(in_)*args.uda_holdout_fraction),
-                misc_aug.seed_hash(args.trial_seed, env_i))
+#         if env_i in args.test_envs:
+#             uda, in_ = misc_aug.split_dataset(in_,
+#                 int(len(in_)*args.uda_holdout_fraction),
+#                 misc_aug.seed_hash(args.trial_seed, env_i))
 
-        if hparams['class_balanced']:
-            in_weights = misc_aug.make_weights_for_balanced_classes(in_)
-            out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs]
-            if uda is not None:
-                uda_weights = misc_aug.make_weights_for_balanced_classes(uda)
-        else:
-            in_weights, out_weights, uda_weights = None, None , None
-        in_splits.append((ins_[0], in_weights))
-        out_splits.append([(outs[i], out_weights) for i in range(len(outs))])
-        if len(uda):
-            uda_splits.append((uda, uda_weights))
+#         if hparams['class_balanced']:
+#             in_weights = misc_aug.make_weights_for_balanced_classes(in_)
+#             out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs]
+#             if uda is not None:
+#                 uda_weights = misc_aug.make_weights_for_balanced_classes(uda)
+#         else:
+#             in_weights, out_weights, uda_weights = None, None , None
+#         in_splits.append((ins_[0], in_weights))
+#         out_splits.append([(outs[i], out_weights) for i in range(len(outs))])
+#         if len(uda):
+#             uda_splits.append((uda, uda_weights))
     
-    orig_out_splits = out_splits
-    out_splits = [item for sublist in out_splits for item in sublist]
+#     orig_out_splits = out_splits
+#     out_splits = [item for sublist in out_splits for item in sublist]
 
     # train_envs = np.setdiff1d(np.arange(len(orig_out_splits)), args.test_envs)
     # test_out_split_idx = args.test_envs * len(train_envs)
@@ -182,23 +232,6 @@ if __name__ == "__main__":
         for i, (env, env_weights) in enumerate(uda_splits)
         if i in args.test_envs]
 
-    # eval_loaders = [FastDataLoader(
-    #     dataset=env,
-    #     batch_size=64,
-    #     num_workers=dataset.N_WORKERS)
-    #     for env, _ in (in_splits + uda_splits)]
-
-    # for i, envs in enumerate(orig_out_splits):
-    #     for env in envs:
-    #         eval_loaders.append(FastDataLoader(dataset=env, batch_size=64, num_workers=dataset.N_WORKERS)) 
-    
-    # val_loaders_invenio = []
-    # for i, (envs, env_weights) in enumerate(out_splits):
-    #     if i not in args.test_envs:
-    #         val_loader_invenio = []
-    #         for env in envs:
-    #             val_loader_invenio.append(InfiniteDataLoader(dataset=env, weights=env_weights, batch_size=hparams['batch_size'],num_workers=dataset.N_WORKERS))
-    #     val_loaders_invenio.append(val_loader_invenio)
     eval_loaders = [FastDataLoader(
         dataset=env,
         batch_size=hparams['batch_size'],
@@ -210,7 +243,7 @@ if __name__ == "__main__":
         weights=env_weights,
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
-        for i, (env, env_weights) in enumerate(out_splits)
+        for i, (env, env_weights) in enumerate(in_val_splits)
         if i not in to_drop_from_meta_test_out_splits] # todo: 
     eval_weights = [None for _, weights in (in_splits + out_splits + uda_splits)]
     eval_loader_names = ['env{}_in{}'.format(i, 0)
