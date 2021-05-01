@@ -25,11 +25,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
     parser.add_argument('--data_dir', type=str,default= 'DATA')
     parser.add_argument('--csv_root', type= str,default= 'PACS_splits/sketch/seed_12')
-    parser.add_argument('--dataset', type=str, default="VLCS")
+    parser.add_argument('--dataset', type=str, default="PACS")
     parser.add_argument('--algorithm', type=str, default="INVENIO")
     parser.add_argument('--task', type=str, default="domain_generalization",
         help='domain_generalization | domain_adaptation')
-    parser.add_argument('--hparams', type=str,default= '{"batch_size":32,"data_augmentation":0}',
+    parser.add_argument('--hparams', type=str,default= '{"batch_size":2,"data_augmentation":0}',
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
         help='Seed for random hparams (0 means "default hparams")')
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[1])
-    parser.add_argument('--output_dir', type=str, default="invenio_VLCS_aug_debug")
+    parser.add_argument('--output_dir', type=str, default="invenio_PACS_aug_debug")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -130,12 +130,15 @@ if __name__ == "__main__":
         for env_i, envs in enumerate(dataset):
             in_vals = []
             ins_ = []
+            outs_ = []
             uda = []
             for tfm_idx, env in enumerate(envs):
                 if env_i in args.test_envs:
                     out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
-                    #outs.append(out)
+                    outs_.append(out)
                     ins_.append(in_)
+                    in_val, in_ = misc_aug.split_dataset(in_, int(len(in_)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
+                    in_vals.append(in_val)
                 else: # traain_env
                     out, in_ = misc.split_dataset(env,
                         int(len(env)*args.holdout_fraction),
@@ -144,6 +147,7 @@ if __name__ == "__main__":
                     in_vals.append(in_val)
                     if tfm_idx == 0:
                         ins_.append(in_) #append only the datasets without our out_augs as the in splits
+                        outs_.append(out) #make sure no augmentation on out for train env val val
                     
             
             if env_i in args.test_envs:
@@ -153,61 +157,61 @@ if __name__ == "__main__":
 
             if hparams['class_balanced']:
                 in_weights = misc_aug.make_weights_for_balanced_classes(in_)
-                out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs]
+                out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs_]
                 if uda is not None:
                     uda_weights = misc_aug.make_weights_for_balanced_classes(uda)
             else:
                 in_weights,in_val_weights, out_weights, uda_weights = None, None, None , None
             in_splits.append((ins_[0], in_weights))
-            out_splits.append((out,out_weights))
+            out_splits.append((outs_[0],out_weights))
             in_val_splits.append([(in_vals[i], in_val_weights) for i in range(len(in_vals))])
             if len(uda):
                 uda_splits.append((uda, uda_weights))
         
         orig_in_val_splits = in_val_splits
         in_val_splits = [item for sublist in in_val_splits for item in sublist]
-#     in_splits = []
-#     out_splits = []
-#     uda_splits = []
-#     for env_i, envs in enumerate(dataset):
-#         outs = []
-#         ins_ = []
-#         uda = []
-#         for tfm_idx, env in enumerate(envs):
-#             if env_i in args.test_envs:
-#                 out, in_ = misc.split_dataset(env,
-#                             int(len(env)*args.holdout_fraction),
-#                             misc.seed_hash(args.trial_seed, env_i))
+    # in_splits = []
+    # out_splits = []
+    # uda_splits = []
+    # for env_i, envs in enumerate(dataset):
+    #     outs = []
+    #     ins_ = []
+    #     uda = []
+    #     for tfm_idx, env in enumerate(envs):
+    #         if env_i in args.test_envs:
+    #             out, in_ = misc.split_dataset(env,
+    #                         int(len(env)*args.holdout_fraction),
+    #                         misc.seed_hash(args.trial_seed, env_i))
                 
-#                 out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
-#                 outs.append(out)
-#                 ins_.append(in_)
-#             else:
-#                 out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
-#                 outs.append(out)
-#                 if tfm_idx == 0:
-#                     ins_.append(in_) #append only the datasets without our out_augs as the in splits
+    #             out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
+    #             outs.append(out)
+    #             ins_.append(in_)
+    #         else:
+    #             out, in_ = misc_aug.split_dataset(env, int(len(env)*args.holdout_fraction), misc_aug.seed_hash(args.trial_seed, env_i))
+    #             outs.append(out)
+    #             if tfm_idx == 0:
+    #                 ins_.append(in_) #append only the datasets without our out_augs as the in splits
 
         
-#         if env_i in args.test_envs:
-#             uda, in_ = misc_aug.split_dataset(in_,
-#                 int(len(in_)*args.uda_holdout_fraction),
-#                 misc_aug.seed_hash(args.trial_seed, env_i))
+    #     if env_i in args.test_envs:
+    #         uda, in_ = misc_aug.split_dataset(in_,
+    #             int(len(in_)*args.uda_holdout_fraction),
+    #             misc_aug.seed_hash(args.trial_seed, env_i))
 
-#         if hparams['class_balanced']:
-#             in_weights = misc_aug.make_weights_for_balanced_classes(in_)
-#             out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs]
-#             if uda is not None:
-#                 uda_weights = misc_aug.make_weights_for_balanced_classes(uda)
-#         else:
-#             in_weights, out_weights, uda_weights = None, None , None
-#         in_splits.append((ins_[0], in_weights))
-#         out_splits.append([(outs[i], out_weights) for i in range(len(outs))])
-#         if len(uda):
-#             uda_splits.append((uda, uda_weights))
+    #     if hparams['class_balanced']:
+    #         in_weights = misc_aug.make_weights_for_balanced_classes(in_)
+    #         out_weights = [misc_aug.make_weights_for_balanced_classes(out) for out in outs]
+    #         if uda is not None:
+    #             uda_weights = misc_aug.make_weights_for_balanced_classes(uda)
+    #     else:
+    #         in_weights, out_weights, uda_weights = None, None , None
+    #     in_splits.append((ins_[0], in_weights))
+    #     out_splits.append([(outs[i], out_weights) for i in range(len(outs))])
+    #     if len(uda):
+    #         uda_splits.append((uda, uda_weights))
     
-#     orig_out_splits = out_splits
-#     out_splits = [item for sublist in out_splits for item in sublist]
+    # orig_out_splits = out_splits
+    # out_splits = [item for sublist in out_splits for item in sublist]
 
     # train_envs = np.setdiff1d(np.arange(len(orig_out_splits)), args.test_envs)
     # test_out_split_idx = args.test_envs * len(train_envs)
@@ -231,28 +235,38 @@ if __name__ == "__main__":
         num_workers=dataset.N_WORKERS)
         for i, (env, env_weights) in enumerate(uda_splits)
         if i in args.test_envs]
-
+    
     eval_loaders = [FastDataLoader(
         dataset=env,
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
         for env, _ in (in_splits + out_splits + uda_splits)]
+
+    if args.split_indata: 
+        invenio_mata_out_splits = in_val_splits
+    else: 
+        invenio_mata_out_splits = out_splits
+
+
     to_drop_from_meta_test_out_splits = [t*(len(dataset)-len(args.test_envs)) for t in args.test_envs]
     val_loaders_invenio = [InfiniteDataLoader(
         dataset=env,
         weights=env_weights,
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS)
-        for i, (env, env_weights) in enumerate(in_val_splits)
-        if i not in to_drop_from_meta_test_out_splits] # todo: 
+        for i, (env, env_weights) in enumerate(invenio_mata_out_splits) if i not in to_drop_from_meta_test_out_splits]
+    
     eval_weights = [None for _, weights in (in_splits + out_splits + uda_splits)]
     eval_loader_names = ['env{}_in{}'.format(i, 0)
         for i in range(len(in_splits))]
     # train_envs = np.setdiff1d(np.arange(len(orig_out_splits)), args.test_envs)
     # eval_loader_names = ['env{}_out'.format(test_out_split_idx)]
-    for i, envs in enumerate(orig_out_splits):
-        for j in range(len(envs)):
-            eval_loader_names.append('env{}_out{}'.format(i, j))
+    eval_loader_names += ['env{}_out{}'.format(i,0)
+        for i in range(len(out_splits))]
+    
+    # for i, envs in enumerate(orig_out_splits):
+    #     for j in range(len(envs)):
+    #         eval_loader_names.append('env{}_out{}'.format(i, j))
 
     # eval_loader_names += ['env{}_out'.format(i)
     #     for i in range(len(out_splits))]
@@ -304,6 +318,7 @@ if __name__ == "__main__":
                 name = 'env'+str(test_env)+split+str(0)
                 preds_labels[name+'_preds_models']=[]
                 preds_labels[name+'_labels']=[]
+        acc_flags={'ensemble_for_obs':True,'compute_test_beta':False}
     for step in range(start_step, n_steps):
         algorithm.to(device)
         step_start_time = time.time()
@@ -343,7 +358,7 @@ if __name__ == "__main__":
             }
 
             for key, val in checkpoint_vals.items():
-                if key not in ['betas','models_selected']:
+                if key not in ['betas','models_selected', 'loss', 'step_time']:
                     results[key] = np.mean(val)
 
             evals = zip(eval_loader_names, eval_loaders, eval_weights)
@@ -357,9 +372,8 @@ if __name__ == "__main__":
                 test_out_split_idx = args.test_envs[0] * len(train_envs)
                 models_selected = step_vals['models_selected']
                 
-                # correct_models_selected_for_each_domain = np.nan* np.ones(len(dataset))
-                correct_models_selected_for_each_domain = np.nan* np.ones(len(eval_loaders)-(len(train_envs)+len(args.test_envs)))
-                
+                # correct_models_selected_for_each_domain = np.nan* np.ones(len(eval_loaders)-(len(train_envs)+len(args.test_envs)))
+                correct_models_selected_for_each_domain = np.nan* np.ones(len(val_loaders_invenio)+len(args.test_envs))
                 count = 0
                 for i in range(len(correct_models_selected_for_each_domain)):
                     if i != test_out_split_idx:
@@ -374,20 +388,20 @@ if __name__ == "__main__":
                 beta_train_all.append(checkpoint_vals['betas'])
                 del step_vals['betas'] 
                 del step_vals['models_selected']
-                results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,compute_test_beta=compute_test_beta)
-                if compute_test_beta:
-                    beta_test_all.append(results_invenio['beta_test'])
-                    del results['beta_test']
-                else:
-                    for test_env in args.test_envs:
-                        for split in ['_in','_out']:
-                            name = 'env'+str(test_env)+split+str(0)
-                            preds_labels[name+'_preds_models'].append(results_invenio[name+'_preds_models'])
-                            preds_labels[name+'_labels'].append(results_invenio[name+'_labels'])
-                            del results_invenio[name+'_preds_models']
-                            del results_invenio[name+'_labels']
-                misc_aug.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
-                misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'betas_while_training'+str(step)+'.pkl'))
+                results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,acc_flags)#compute_test_beta=compute_test_beta)
+                # if compute_test_beta:
+                #     beta_test_all.append(results_invenio['beta_test'])
+                #     del results['beta_test']
+                # else:
+                #     for test_env in args.test_envs:
+                #         for split in ['_in','_out']:
+                #             name = 'env'+str(test_env)+split+str(0)
+                #             preds_labels[name+'_preds_models'].append(results_invenio[name+'_preds_models'])
+                #             preds_labels[name+'_labels'].append(results_invenio[name+'_labels'])
+                #             del results_invenio[name+'_preds_models']
+                #             del results_invenio[name+'_labels']
+                # misc_aug.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
+                # misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'betas_while_training'+str(step)+'.pkl'))
                 results.update(results_invenio)
 
                 # results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device, step, ensemble = False)
@@ -399,10 +413,10 @@ if __name__ == "__main__":
                     results[name+'_acc'] = acc
             results_keys = sorted(results.keys())
             if results_keys != last_results_keys:
-                misc_aug.print_row(results_keys, colwidth=20)
+                misc_aug.print_row(results_keys, colwidth=28)
                 last_results_keys = results_keys
             misc_aug.print_row([results[key] for key in results_keys],
-                colwidth=20)
+                colwidth=28)
 
             results.update({
                 'hparams': hparams,
