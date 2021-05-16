@@ -7,66 +7,23 @@ Things that don't belong anywhere else
 import hashlib
 import json
 import os
-import sys
-
-import torch.nn.functional as F
-import torch.autograd as autograd
-from shutil import copyfile
 import pickle
+import sys
+from collections import Counter
+from shutil import copyfile
+
 import numpy as np
 import torch
+import torch.autograd as autograd
+import torch.nn.functional as F
 import tqdm
-from collections import Counter
 
-def make_weights_for_balanced_classes(dataset):
-    counts = Counter()
-    classes = []
-    for _, y in dataset:
-        y = int(y)
-        counts[y] += 1
-        classes.append(y)
+from domainbed.lib.misc import (PredictiveEntropy, Tee, accuracy,
+                  calculate_cosine_similarity_loss, compare_models, load_obj,
+                  make_weights_for_balanced_classes, print_row,
+                  print_separator, random_pairs_of_minibatches,
+                  save_obj_with_filename, seed_hash)
 
-    n_classes = len(counts)
-
-    weight_per_class = {}
-    for y in counts:
-        weight_per_class[y] = 1 / (counts[y] * n_classes)
-
-    weights = torch.zeros(len(dataset))
-    for i, y in enumerate(classes):
-        weights[i] = weight_per_class[int(y)]
-
-    return weights
-
-def pdb():
-    sys.stdout = sys.__stdout__
-    import pdb
-    print("Launching PDB, enter 'n' to step to parent function.")
-    pdb.set_trace()
-
-def seed_hash(*args):
-    """
-    Derive an integer hash from all args, for use as a random seed.
-    """
-    args_str = str(args)
-    return int(hashlib.md5(args_str.encode("utf-8")).hexdigest(), 16) % (2**31)
-
-def print_separator():
-    print("="*80)
-
-def print_row(row, colwidth=10, latex=False):
-    if latex:
-        sep = " & "
-        end_ = "\\\\"
-    else:
-        sep = "  "
-        end_ = ""
-
-    def format_val(x):
-        if np.issubdtype(type(x), np.floating):
-            x = "{:.10f}".format(x)
-        return str(x).ljust(colwidth)[:colwidth]
-    print(sep.join([format_val(x) for x in row]), end_)
 
 class _SplitDataset(torch.utils.data.Dataset):
     """Used by split_dataset"""
@@ -104,59 +61,8 @@ def split_dataset(dataset, n, seed=0):
     keys_2 = keys[n:]
     return _SplitDataset(dataset, keys_1), _SplitDataset(dataset, keys_2)
 
-def random_pairs_of_minibatches(minibatches):
-    perm = torch.randperm(len(minibatches)).tolist() 
-    pairs = []
-
-    for i in range(len(minibatches)):
-        j = i + 1 if i < (len(minibatches) - 1) else 0
-
-        xi, yi = minibatches[perm[i]][0], minibatches[perm[i]][1]
-        xj, yj = minibatches[perm[j]][0], minibatches[perm[j]][1]
-
-        min_n = min(len(xi), len(xj))
-
-        pairs.append(((xi[:min_n], yi[:min_n]), (xj[:min_n], yj[:min_n])))
-
-    return pairs
 
 
-def accuracy(network, loader, weights, device):
-    correct = 0
-    total = 0
-    weights_offset = 0
-
-    network.eval()
-    with torch.no_grad():
-        for x, y in loader:
-            x = x.to(device)
-            y = y.to(device)
-            try:
-                p = network.predict(x)
-            except:
-                p = network(x)
-            if weights is None:
-                batch_weights = torch.ones(len(x))
-            else:
-                batch_weights = weights[weights_offset : weights_offset + len(x)]
-                weights_offset += len(x)
-            batch_weights = batch_weights.to(device)
-            if p.size(1) == 1:
-                correct += (p.gt(0).eq(y).float() * batch_weights.view(-1, 1)).sum().item()
-            else:
-                correct += (p.argmax(1).eq(y).float() * batch_weights).sum().item()
-            total += batch_weights.sum().item()
-    network.train()
-
-    return correct / total
-
-def calculate_cosine_similarity_loss(list_gradients1,list_gradients2):
-    cos = torch.nn.CosineSimilarity()
-    cos_params = []
-    for i,j in zip(list_gradients1,list_gradients2):
-        cos_sim = cos(i.view(1,-1),j.view(1,-1))
-        cos_params.append(cos_sim)
-    return torch.mean(torch.Tensor(cos_params))
 
 def invenio_beta_grads(loaders, test_env_loader, model_chosen, device):
     test_env_grads = []
@@ -202,7 +108,10 @@ def ensemble_accuracy(networks, loader, weights, device):
 
     [network.eval() for network in networks]
     predictions_=[]
+    pred_entropies_all=[]
+    max_probs= []
     labels_=[]
+    entropy = PredictiveEntropy()
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device)
@@ -223,13 +132,16 @@ def ensemble_accuracy(networks, loader, weights, device):
             else:
                 correct += (p_mean.argmax(1).eq(y).float() * batch_weights).sum().item()
             total += batch_weights.sum().item()
-            predictions_.append(torch.stack(p).detach().cpu().numpy())
+            predictions_.append(p_mean.detach().cpu().numpy())
             labels_.append(y.detach().cpu().numpy())
+            pred_entropies_all.append(entropy(p_mean).detach().cpu().numpy())
+
     [network.train() for network in networks]
     return_dict={}
     return_dict['acc']=correct / total
-    return_dict['preds']= np.concatenate(predictions_,axis=1)
     return_dict['labels']= np.concatenate(labels_)
+    return_dict['preds']= np.concatenate(predictions_)
+    return_dict['pred_entropies']= np.concatenate(pred_entropies_all)
     return return_dict
 def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device,acc_flags):
     compute_test_beta=acc_flags['compute_test_beta'] # setting this to false will give you ensemble
@@ -272,23 +184,26 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
         results ={}
         for i in range(len(eval_loader_names)//2):
             # for split in ['_in','_out']:
+
             for split in ['_out0']:
+
+                
                 name = 'env'+str(i)+split
                 loader= eval_dict[name][0]
                 weights= eval_dict[name][1]
-                if i in test_envs: name = 'unobs_'+name
+                if i in test_envs: name = 'unobs_'+'env'+str(i)+'_in0' # for test env we need 'in' not 'out
+
                 for m in range(len(algorithm.invenio_networks)):
                     acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
                      
                     results[name+'_m_'+str(m)+'_acc'] = acc
-                # for m in range(len(algorithm.invenio_networks)):
-                #         acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
-                #         results[name+'_m_'+str(m)+'_acc'] = acc
-                ensemble_results= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
+             
+                ensemble_result_dict= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
                 
-                results[name+'_ens_acc']= ensemble_results['acc']
-                # results[name+'_preds_models']= ensemble_results['preds']
-                # results[name+'_labels']= ensemble_results['labels']
+                results[name+'_ens_acc']= ensemble_result_dict['acc']
+                results[name+'_preds_ens']= ensemble_result_dict['preds']
+                results[name+'_labels']= ensemble_result_dict['labels']
+                results[name+'_entropies'] = ensemble_result_dict['pred_entropies']
 
     else:
         
@@ -351,129 +266,5 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                     results[name+'_preds_models']= ensemble_results['preds']
                     results[name+'_labels']= ensemble_results['labels']
 
-    return results   
+    return results
 
-    # if compute_test_beta:
-    #     beta = torch.zeros((len(test_envs), len(algorithm.invenio_networks)))
-    #     for test_env in range(len(test_envs)):
-    #         for i, domain_idx in enumerate(domains_selected_for_each_model):
-    #             loaders = []
-    #             for domain in domain_idx:
-    #                 domain_name = 'env'+str(domain)+'_out'
-    #                 loaders.append(eval_dict[domain_name][0])
-    #             test_env_domain_name = 'env'+str(test_env)+'_out'
-    #             test_env_loader= eval_dict[test_env_domain_name][0]
-    #             if len(domain_idx) != 0:
-    #                 beta[test_env,i] = invenio_beta_grads(loaders, test_env_loader, algorithm.invenio_networks[i], device)
-    #             else:
-    #                 beta[test_env,i] = 0
-    #     for i,test_env in enumerate(test_envs):
-    #         beta_test_env = beta[i,:]
-    #         best_model_num = np.argmax(beta_test_env)
-    #         for split in ['_in','_out']:
-    #             name = 'env'+str(test_env)+split
-    #             loader= eval_dict[name][0]
-    #             weights= eval_dict[name][1]
-    #             acc=accuracy(algorithm.invenio_networks[best_model_num],loader,weights,device)
-    #             results[name+'_acc'] = acc
-    # else: 
-    #     """
-    #     if we dont want to compute betas we want to get results using all the models and also an ensemble of them
-    #     """
-    #     for i,test in enumerate(test_envs):
-    #         for split in ['_in','_out']:
-    #             name = 'env'+str(test_env)+split
-    #             loader= eval_dict[name][0]
-    #             weights= eval_dict[name][1]
-    #             for m in range(len(algorithm.invenio_networks)):
-    #                 acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
-    #                 results[name+'_m_'+str(m)+'_acc'] = acc
-    #             ensemble_results= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
-    #             results[name+'_ens_acc']= ensemble_results['acc']
-    #             results[name+'_preds_models']= ensemble_results['preds']
-    #             results[name+'_labels']= ensemble_results['labels']
-
-
-
-
-
-
-
-    
-    # domains_selected_for_each_model=  [[] for i in range(len(algorithm.invenio_networks))]
-    # for m in range(len(algorithm.invenio_networks)):
-    #     for i,ms in enumerate(correct_models_selected_for_each_domain):
-    #         if ms is not np.nan:
-    #             if ms ==m:
-    #                 domains_selected_for_each_model[m].append(i)
-    # # compute betas
-    # for i, model in enumerate(algorithm.invenio_networks):
-    #     # compute gradients with the corresponding domains selected for this model
-    #     domains_selected = domains_selected_for_each_model[i]
-    #     obs_loaders= []
-    #     for d in domains_selected: # train_loader
-    #         loader_name= 'env'+str(d)+'_in'
-    #         obs_loaders.append(eval_dict[loader_name])
-
-
-
-    # with torch.no_grad():
-
-        
-
-
-
-
-
-
-    #     for x, y in loader:
-    #         x = x.to(device)
-    #         y = y.to(device)
-    #         p = network.predict(x)
-    #         if weights is None:
-    #             batch_weights = torch.ones(len(x))
-    #         else:
-    #             batch_weights = weights[weights_offset : weights_offset + len(x)]
-    #             weights_offset += len(x)
-    #         batch_weights = batch_weights.to(device)
-    #         if p.size(1) == 1:
-    #             correct += (p.gt(0).eq(y).float() * batch_weights.view(-1, 1)).sum().item()
-    #         else:
-    #             correct += (p.argmax(1).eq(y).float() * batch_weights).sum().item()
-    #         total += batch_weights.sum().item()
-    # network.train()
-
-    # return correct / total
-def save_obj_with_filename(data,filename):
-    with open(filename,"wb") as f:
-        return pickle.dump(data,f)
-def load_obj(filename ):
-    with open(filename, 'rb') as f:
-        return pickle.load(f)
-class Tee:
-    def __init__(self, fname, mode="a"):
-        self.stdout = sys.stdout
-        self.file = open(fname, mode)
-
-    def write(self, message):
-        self.stdout.write(message)
-        self.file.write(message)
-        self.flush()
-
-    def flush(self):
-        self.stdout.flush()
-        self.file.flush()
-        
-def compare_models(model_1, model_2):
-    models_differ = 0
-    for key_item_1, key_item_2 in zip(model_1.state_dict().items(), model_2.state_dict().items()):
-        if torch.equal(key_item_1[1], key_item_2[1]):
-            pass
-        else:
-            models_differ += 1
-            if (key_item_1[0] == key_item_2[0]):
-                print('Mismtach found at', key_item_1[0])
-            else:
-                raise Exception
-    if models_differ == 0:
-        print('Models match perfectly! :)')

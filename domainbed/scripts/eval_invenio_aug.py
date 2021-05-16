@@ -1,5 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-
 import argparse
 import collections
 import json
@@ -43,7 +41,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_freq', type=int, default=None,
         help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[1])
-    parser.add_argument('--output_dir', type=str, default="invenio_PACS_aug_debug")
+    parser.add_argument('--output_dir', type=str, default="Inevnio_validationaug_train_aug_heldout_val_debug/OfficeHome_M3_trial_seed_2/env0/indiv_ensemble_no_beta")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0)
     parser.add_argument('--skip_model_save', action='store_true')
@@ -52,6 +50,7 @@ if __name__ == "__main__":
     parser.add_argument('--out_augs',default=True, help = "augmentations for out splits of observed domains")
     parser.add_argument('--split_indata',default=True,help="create held out validation \
         and use a portion of train data as meta test")
+    parser.add_argument('--user_defined_step',  default=-1)
     args = parser.parse_args()
     compute_test_beta= args.compute_test_beta_Invenio
 
@@ -61,7 +60,7 @@ if __name__ == "__main__":
     algorithm_dict = None
 
     os.makedirs(args.output_dir, exist_ok=True)
-    sys.stdout = misc_aug.Tee(os.path.join(args.output_dir, 'out.txt'))
+    sys.stdout = misc_aug.Tee(os.path.join(args.output_dir, 'out_eval.txt'))
     sys.stderr = misc_aug.Tee(os.path.join(args.output_dir, 'err.txt'))
 
     print("Environment:")
@@ -305,145 +304,62 @@ if __name__ == "__main__":
             "model_dict": algorithm.cpu().state_dict()
         }
         torch.save(save_dict, os.path.join(args.output_dir, filename))
-
+    
+    def load_model(filename):
+        dump = torch.load(filename)
+        algorithm_class = algorithms.get_algorithm_class(dump["args"]["algorithm"])
+        algorithm = algorithm_class(
+            dump["model_input_shape"],
+            dump["model_num_classes"],
+            dump["model_num_domains"],
+            dump["model_hparams"])
+        algorithm.load_state_dict(dump["model_dict"])
+        return algorithm
 
     last_results_keys = None
-    if args.algorithm== 'INVENIO':
-        models_selected_all=[]
-        beta_train_all=[]
-        beta_test_all=[]
-        preds_labels={}
-        for test_env in args.test_envs:
-            for split in ['_in','_out']:
-                name = 'env'+str(test_env)+split+str(0)
-                preds_labels[name+'_preds_models']=[]
-                preds_labels[name+'_labels']=[]
-        acc_flags={'ensemble_for_obs':True,'compute_test_beta':False}
-    for step in range(start_step, n_steps):
-        algorithm.to(device)
-        step_start_time = time.time()
-        minibatches_device = [(x.to(device), y.to(device))
-            for x,y in next(train_minibatches_iterator)]
-        if args.task == "domain_adaptation":
-            uda_device = [x.to(device)
-                for x,_ in next(uda_minibatches_iterator)]
-        else:
-            uda_device = None
-        if args.algorithm =='INVENIO':
 
-            # we need validation in_splits of observed domains
-            val_minibatches= [(x.to(device), y.to(device))\
-            for x,y in next(val_minibatches_iterator_invenio)]
+    ckpt_names = [os.path.join(args.output_dir,f) for f in os.listdir(args.output_dir) if 'model' in f and 'preds' not in f and 'selected' not in f] 
+    try:
+        ckpt_names.remove(os.path.join(args.output_dir,'model.pkl'))# remove the last checkpoint as it is already saved
+    except:
+        pass
+    ckpt_names= sorted(ckpt_names,key= lambda x: int(x.split(args.output_dir)[1].split('model_')[1].split('step')[1].strip('.pkl')))
+    
+    if int(args.user_defined_step)>0:
+        ckpt_names= [os.path.join(args.output_dir,'model_step'+str(int(args.user_defined_step))+'.pkl')]
 
-            # unnorm = UnNormalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            # tfm1 = transforms.Compose([unnorm, transforms.ToPILImage()])
-            # a = [tfm1(f) for f in val_minibatches[0][0]]
-            # b = [tfm1(f) for f in val_minibatches[1][0]]
-            # c = [tfm1(f) for f in val_minibatches[2][0]]
 
-            step_vals = algorithm.update(minibatches_device, val_minibatches,uda_device)
-        else:
-            step_vals = algorithm.update(minibatches_device, uda_device)
-        
+    for i in range( len(ckpt_names)):
 
-        checkpoint_vals['step_time'].append(time.time() - step_start_time)
+        algorithm = load_model(ckpt_names[i])
+        algorithm= algorithm.to(device)
+        evals = zip(eval_loader_names, eval_loaders, eval_weights)
+        # if nt(args.user_defined_step)>0: that means we need not compute only for that checkpoint else for all.
+        # for now just dump the entropies for all. 
+        # We nned only outs for obs and ins for obs
 
-        for key, val in step_vals.items():
-            checkpoint_vals[key].append(val)
-
-        if (step % checkpoint_freq == 0) or (step == n_steps - 1):
-            results = {
-                'step': step,
-                'epoch': step / steps_per_epoch,
-            }
-
-            for key, val in checkpoint_vals.items():
-                if key not in ['betas','models_selected', 'loss', 'step_time']:
-                    results[key] = np.mean(val)
-
-            evals = zip(eval_loader_names, eval_loaders, eval_weights)
+        step_number =   int(ckpt_names[i].split(args.output_dir)[1].split('model_')[1].split('step')[1].strip('.pkl'))
+        if args.algorithm == 'INVENIO': 
+            eval_dict ={}
+            for name, loader, weights in evals:
+                eval_dict[name]= [loader,weights] 
+            models_selected = [1,1,1]#step_vals['models_selected'] # random stuff. we will not use it anyway
             
-            if args.algorithm == 'INVENIO': 
-                eval_dict ={}
-                for name, loader, weights in evals:
-                    eval_dict[name]= [loader,weights]
-                
-                train_envs = [ i for i in range(len(dataset)) if i not in args.test_envs]
-                test_out_split_idx = args.test_envs[0] * len(train_envs)
-                models_selected = step_vals['models_selected']
-                
-                # correct_models_selected_for_each_domain = np.nan* np.ones(len(eval_loaders)-(len(train_envs)+len(args.test_envs)))
-                correct_models_selected_for_each_domain = np.nan* np.ones(len(val_loaders_invenio)+len(args.test_envs))
-                count = 0
-                for i in range(len(correct_models_selected_for_each_domain)):
-                    if i != test_out_split_idx:
-                        correct_models_selected_for_each_domain[i]=models_selected[count]
-                        
-                        count += 1
-                # for t,m in zip(train_envs,models_selected):
-                #     correct_models_selected_for_each_domain[t]=m
-                models_selected_all.append(correct_models_selected_for_each_domain)
-                
+            correct_models_selected_for_each_domain = np.nan* np.ones(len(dataset))
+            train_envs = [ i for i in range(len(dataset)) if i not in args.test_envs]
+            for t,m in zip(train_envs,models_selected):
+                correct_models_selected_for_each_domain[t]=m
+            acc_flags={'ensemble_for_obs':True,'compute_test_beta':False}
 
-                beta_train_all.append(checkpoint_vals['betas'])
-                del step_vals['betas'] 
-                del step_vals['models_selected']
-                results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,acc_flags)#compute_test_beta=compute_test_beta)
-                # if compute_test_beta:
-                #     beta_test_all.append(results_invenio['beta_test'])
-                #     del results['beta_test']
-                # else:
-                #     for test_env in args.test_envs:
-                #         for split in ['_in','_out']:
-                #             name = 'env'+str(test_env)+split+str(0)
-                #             preds_labels[name+'_preds_models'].append(results_invenio[name+'_preds_models'])
-                #             preds_labels[name+'_labels'].append(results_invenio[name+'_labels'])
-                #             del results_invenio[name+'_preds_models']
-                #             del results_invenio[name+'_labels']
-                # misc_aug.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_test_'+str(args.test_envs)+'.pkl'))
-                # misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'betas_while_training'+str(step)+'.pkl'))
-                results.update(results_invenio)
-
-                # results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device, step, ensemble = False)
-                # results.update(results_invenio)
-                #TODO: results[name+'_acc'] = acc
-            else:
-                for name, loader, weights in evals:
-                    acc = misc_aug.accuracy(algorithm, loader, weights, device)
-                    results[name+'_acc'] = acc
-            results_keys = sorted([k for k in results_invenio.keys() if 'acc' in k])
+            results_invenio = misc_aug.invenio_accuracy(algorithm, eval_dict, args.test_envs, correct_models_selected_for_each_domain,device,acc_flags)
+            results_invenio['step']= step_number
+            results_keys  = sorted([k for k in results_invenio.keys() if 'acc' in k])
             results_keys.append('step')
-            if results_keys != last_results_keys:
-                misc_aug.print_row(results_keys, colwidth=28)
-                last_results_keys = results_keys
-            misc_aug.print_row([results[key] for key in results_keys],
-                colwidth=28)
+           
+            if i ==0:
+                misc_aug.print_row(results_keys, colwidth=25)
+            misc_aug.print_row([results_invenio[key] for key in results_keys],colwidth=25)
 
-            results.update({
-                'hparams': hparams,
-                'args': vars(args)    
-            })
-
-            # epochs_path = os.path.join(args.output_dir, 'results.jsonl')
-            # with open(epochs_path, 'a') as f:
-            #     f.write(json.dumps(results, sort_keys=True) + "\n")
-
-            algorithm_dict = algorithm.state_dict()
-            start_step = step + 1
-            checkpoint_vals = collections.defaultdict(lambda: [])
-
-            if args.save_model_every_checkpoint:
-                save_checkpoint(f'model_step{step}.pkl')
-
-    save_checkpoint('model.pkl')
-
-    with open(os.path.join(args.output_dir, 'done'), 'w') as f:
-        f.write('done')
-    if args.algorithm == 'INVENIO':
-        if compute_test_beta:
+            misc.save_obj_with_filename(results_invenio,os.path.join(args.output_dir,'entropies_labels_step'+str(step_number)+'.pkl'))
             
-            misc_aug.save_obj_with_filename(beta_test_all,os.path.join(args.output_dir, 'beta_while_testing.pkl'))
-        else:
-            misc_aug.save_obj_with_filename(models_selected_all,os.path.join(args.output_dir, 'final_models_selected_while_training.pkl'))
-            misc_aug.save_obj_with_filename(preds_labels,os.path.join(args.output_dir,'preds_labels_models_final_test_'+str(args.test_envs)+'.pkl'))
-            misc_aug.save_obj_with_filename(beta_train_all,os.path.join(args.output_dir, 'final_beta_while_training.pkl'))
+

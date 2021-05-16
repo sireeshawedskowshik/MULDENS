@@ -125,7 +125,8 @@ def _hparams(algorithm, dataset, random_seed):
         _hparam('invenio_num_models',3, lambda r: r.randint(3,size=1))
     if algorithm in ['INVENIO']:    
         _hparam('lr_invenio', 5e-5, lambda r: 10**r.uniform(-5, -3.5))
-
+    if algorithm in ['INVENIO']:    
+        _hparam('COMPUTE_BETA_TRAIN', True, lambda r: 10**r.uniform(-5, -3.5))
     return hparams
 
 def default_hparams(algorithm, dataset):

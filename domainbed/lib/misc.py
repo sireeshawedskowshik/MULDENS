@@ -16,7 +16,16 @@ import numpy as np
 import torch
 import tqdm
 from collections import Counter
+import torch.nn as nn
 
+class PredictiveEntropy(nn.Module):
+    def __init__(self):
+        super(PredictiveEntropy, self).__init__()
+
+    def forward(self, x):
+        b = F.softmax(x, dim=1) * F.log_softmax(x, dim=1)
+        b = -1.0 * b.sum(dim=1)
+        return b
 def make_weights_for_balanced_classes(dataset):
     counts = Counter()
     classes = []
@@ -189,14 +198,21 @@ def ensemble_accuracy(networks, loader, weights, device):
     [network.eval() for network in networks]
     predictions_=[]
     labels_=[]
+    pred_entropies_all=[]
+    max_probs= []
+    entropy = PredictiveEntropy()
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device)
             y = y.to(device)
-            
-            p = [network(x) for network in networks]
+            try:
+               
+                p = [network.predict(x) for network in networks]
+            except:
+                p = [network(x) for network in networks]
 
             p_mean = torch.mean(torch.stack(p),dim =0)
+            
             
             if weights is None:
                 batch_weights = torch.ones(len(x))
@@ -209,13 +225,19 @@ def ensemble_accuracy(networks, loader, weights, device):
             else:
                 correct += (p_mean.argmax(1).eq(y).float() * batch_weights).sum().item()
             total += batch_weights.sum().item()
-            predictions_.append(torch.stack(p).detach().cpu().numpy())
+            predictions_.append(p_mean.detach().cpu().numpy())
+            pred_entropies_all.append(entropy(p_mean).detach().cpu().numpy())
+
             labels_.append(y.detach().cpu().numpy())
     [network.train() for network in networks]
     return_dict={}
     return_dict['acc']=correct / total
-    return_dict['preds']= np.concatenate(predictions_,axis=1)
+  
+    return_dict['preds']= np.concatenate(predictions_)
+    
     return_dict['labels']= np.concatenate(labels_)
+    return_dict['pred_entropies']= np.concatenate(pred_entropies_all)
+
     return return_dict
 def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device,acc_flags):
     compute_test_beta=acc_flags['compute_test_beta'] # setting this to false will give you ensemble
