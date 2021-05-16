@@ -539,6 +539,7 @@ class INVENIO(ERM):
                 weight_decay=self.hparams['weight_decay']
             ) for network_i in self.invenio_networks]
         del self.network
+        self.compute_train_beta = hparams['COMPUTE_BETA_TRAIN']
     def calculate_cosine_similarity_loss(self,list_gradients1,list_gradients2):
         cos = torch.nn.CosineSimilarity()
         cos_params = []
@@ -610,21 +611,25 @@ class INVENIO(ERM):
         
         
         #computer Beta on validation batches
-        
-        beta= torch.zeros((self.num_models, len(val_minibatches)))
-        for j in range(self.num_models):
-            for i in range(len(val_minibatches)):
-                pred_i = self.invenio_networks[j](val_minibatches[i][0])
-                loss_i = F.cross_entropy(pred_i,val_minibatches[i][1])
-                grad_i = torch.autograd.grad(loss_i,self.invenio_networks[j].parameters(), allow_unused=True)
-                beta[j,i]= self.calculate_cosine_similarity_loss(inner_gradients_models[j],grad_i)
-        for i in range(self.num_models):
-            self.put_gradients(self.invenio_networks[i], inner_net_models[i],1)
-        
+        if self.compute_train_beta:
+            beta= torch.zeros((self.num_models, len(val_minibatches)))
+            for j in range(self.num_models):
+                for i in range(len(val_minibatches)):
+                    pred_i = self.invenio_networks[j](val_minibatches[i][0])
+                    loss_i = F.cross_entropy(pred_i,val_minibatches[i][1])
+                    grad_i = torch.autograd.grad(loss_i,self.invenio_networks[j].parameters(), allow_unused=True)
+                    beta[j,i]= self.calculate_cosine_similarity_loss(inner_gradients_models[j],grad_i)
+            for i in range(self.num_models):
+                self.put_gradients(self.invenio_networks[i], inner_net_models[i],1)
+            models_selected = torch.argmax(beta,dim=0)
+        else:
+
+            beta= torch.zeros((self.num_models, len(val_minibatches)))
+            models_selected = torch.randint(self.num_models,(len(val_minibatches),))
         # torch.nn.ModuleList([ self.put_gradients(self.invenio_networks[i], inner_net_models[i],1)\
         #     for i in range(self.num_models)])
         # beta is say 2*3. take argmax along the columns. 
-        models_selected = torch.argmax(beta,dim=0)#models_selected_for_each_domain
+        #models_selected_for_each_domain
 
         for i in range(len(val_minibatches)):
             model_selected = models_selected[i]
