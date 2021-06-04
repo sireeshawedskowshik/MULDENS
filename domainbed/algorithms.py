@@ -28,7 +28,7 @@ ALGORITHMS = [
     'VREx',
     'RSC',
     'SD',
-    'INVENIO'
+    'MULDENS'
 ]
 
 def get_algorithm_class(algorithm_name):
@@ -512,7 +512,7 @@ class MLDG(ERM):
     #
     #     return objective
 
-class INVENIO(ERM):
+class MULDENS(ERM):
     """
     Model-Agnostic Meta-Learning
     Algorithm 1 / Equation (3) from: https://arxiv.org/pdf/1710.03463.pdf
@@ -520,9 +520,9 @@ class INVENIO(ERM):
     Related: https://arxiv.org/pdf/1910.13580.pdf
     """
     def __init__(self, input_shape, num_classes, num_domains, hparams):
-        super(INVENIO, self).__init__(input_shape, num_classes, num_domains,
+        super(MULDENS, self).__init__(input_shape, num_classes, num_domains,
                                    hparams)
-        self.num_models= hparams['invenio_num_models']
+        self.num_models= hparams['MULDENS_num_models']
         self.num_classes= num_classes
         
        
@@ -531,13 +531,13 @@ class INVENIO(ERM):
                             self.num_classes,
                             self.hparams['nonlinear_classifier']) for _ in range(self.num_models)])
         # verify that they are different 
-        self.invenio_networks= torch.nn.ModuleList([nn.Sequential(copy.deepcopy(self.featurizer),classifier_i) \
+        self.MULDENS_networks= torch.nn.ModuleList([nn.Sequential(copy.deepcopy(self.featurizer),classifier_i) \
             for classifier_i in self.classifiers])
-        self.invenio_network_optimizers =[ torch.optim.Adam(
+        self.MULDENS_network_optimizers =[ torch.optim.Adam(
                 network_i.parameters(),
-                lr=self.hparams["lr_invenio"],
+                lr=self.hparams["lr_MULDENS"],
                 weight_decay=self.hparams['weight_decay']
-            ) for network_i in self.invenio_networks]
+            ) for network_i in self.MULDENS_networks]
         del self.network
         self.compute_train_beta = hparams['COMPUTE_BETA_TRAIN']
     def calculate_cosine_similarity_loss(self,list_gradients1,list_gradients2):
@@ -574,8 +574,8 @@ class INVENIO(ERM):
         objective = 0
         device = "cuda" if minibatches[0][0].is_cuda else "cpu"
   
-        [optim_i.zero_grad() for optim_i in self.invenio_network_optimizers]
-        for network_i in self.invenio_networks:
+        [optim_i.zero_grad() for optim_i in self.MULDENS_network_optimizers]
+        for network_i in self.MULDENS_networks:
             for p in network_i.parameters():
                 if p.grad is None:
                     p.grad = torch.zeros_like(p)
@@ -588,10 +588,10 @@ class INVENIO(ERM):
         # verify that they are different 
         
         
-        inner_net_models= torch.nn.ModuleList([copy.deepcopy(network_i) for network_i in self.invenio_networks])
+        inner_net_models= torch.nn.ModuleList([copy.deepcopy(network_i) for network_i in self.MULDENS_networks])
         inner_opts = [torch.optim.Adam(
                 inner_net_i.parameters(),
-                lr=self.hparams["lr_invenio"],
+                lr=self.hparams["lr_MULDENS"],
                 weight_decay=self.hparams['weight_decay']
             ) for inner_net_i in inner_net_models]
         inner_objs= [F.cross_entropy(inner_net_i(all_x), all_y) for inner_net_i in inner_net_models]
@@ -615,18 +615,18 @@ class INVENIO(ERM):
             beta= torch.zeros((self.num_models, len(val_minibatches)))
             for j in range(self.num_models):
                 for i in range(len(val_minibatches)):
-                    pred_i = self.invenio_networks[j](val_minibatches[i][0])
+                    pred_i = self.MULDENS_networks[j](val_minibatches[i][0])
                     loss_i = F.cross_entropy(pred_i,val_minibatches[i][1])
-                    grad_i = torch.autograd.grad(loss_i,self.invenio_networks[j].parameters(), allow_unused=True)
+                    grad_i = torch.autograd.grad(loss_i,self.MULDENS_networks[j].parameters(), allow_unused=True)
                     beta[j,i]= self.calculate_cosine_similarity_loss(inner_gradients_models[j],grad_i)
             for i in range(self.num_models):
-                self.put_gradients(self.invenio_networks[i], inner_net_models[i],1)
+                self.put_gradients(self.MULDENS_networks[i], inner_net_models[i],1)
             models_selected = torch.argmax(beta,dim=0)
         else:
 
             beta= torch.zeros((self.num_models, len(val_minibatches)))
             models_selected = torch.randint(self.num_models,(len(val_minibatches),))
-        # torch.nn.ModuleList([ self.put_gradients(self.invenio_networks[i], inner_net_models[i],1)\
+        # torch.nn.ModuleList([ self.put_gradients(self.MULDENS_networks[i], inner_net_models[i],1)\
         #     for i in range(self.num_models)])
         # beta is say 2*3. take argmax along the columns. 
         #models_selected_for_each_domain
@@ -636,25 +636,20 @@ class INVENIO(ERM):
             pred_i= inner_net_models[model_selected](val_minibatches[i][0])
             loss_i = F.cross_entropy(pred_i, val_minibatches[i][1])
             grad_i = torch.autograd.grad( loss_i, inner_net_models[model_selected].parameters(),allow_unused=True)
-            objective += self.hparams['invenio_beta']*loss_i.item()
-            
-            for p, g_j in zip(self.invenio_networks[model_selected].parameters(), grad_i):
+            objective += self.hparams['MULDENS_beta']*loss_i.item()
+
+            for p, g_j in zip(self.MULDENS_networks[model_selected].parameters(), grad_i):
                 if g_j is not None:
                     p.grad.data.add_(
-                        self.hparams['invenio_beta'] * g_j.data )
+                        self.hparams['MULDENS_beta'] * g_j.data )
         
 
-        [optim_i.step() for optim_i in self.invenio_network_optimizers]
+        [optim_i.step() for optim_i in self.MULDENS_network_optimizers]
 
         return {'loss': objective/num_mb,'models_selected':models_selected.cpu().numpy(),'betas':beta.cpu().numpy() }
         
 
-class INVENIO_orig(INVENIO):
-    def __init__(self, input_shape, num_classes, num_domains, hparams):
-        super(INVENIO_orig, self).__init__(input_shape, num_classes, num_domains,
-                                   hparams)
-    def update(self, minibatches,val_minibatches, unlabeled=None):
-        pass
+
 
 
 class AbstractMMD(ERM):

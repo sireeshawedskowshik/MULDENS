@@ -77,8 +77,8 @@ def _hparams(algorithm, dataset, random_seed):
 
     elif algorithm == "SD":
         _hparam('sd_reg', 0.1, lambda r: 10**r.uniform(-5, -1))
-    elif algorithm == "INVENIO":
-        _hparam('invenio_beta',1.,lambda r: 10**r.uniform(-1, 1))
+    elif algorithm == "MULDENS":
+        _hparam('MULDENS_beta',1.,lambda r: 10**r.uniform(-1, 1))
 
     # Dataset-and-algorithm-specific hparam definitions. Each block of code
     # below corresponds to exactly one hparam. Avoid nested conditionals.
@@ -121,11 +121,11 @@ def _hparams(algorithm, dataset, random_seed):
         _hparam('weight_decay_g', 0., lambda r: 0.)
     elif algorithm in ['DANN', 'CDANN']:
         _hparam('weight_decay_g', 0., lambda r: 10**r.uniform(-6, -2) )
-    if algorithm in ['INVENIO']:
-        _hparam('invenio_num_models',3, lambda r: r.randint(3,size=1))
-    if algorithm in ['INVENIO']:    
-        _hparam('lr_invenio', 5e-5, lambda r: 10**r.uniform(-5, -3.5))
-    if algorithm in ['INVENIO']:    
+    if algorithm in ['MULDENS']:
+        _hparam('MULDENS_num_models',3, lambda r: r.randint(3,size=1))
+    if algorithm in ['MULDENS']:    
+        _hparam('lr_MULDENS', 5e-5, lambda r: 10**r.uniform(-5, -3.5))
+    if algorithm in ['MULDENS']:    
         _hparam('COMPUTE_BETA_TRAIN', True, lambda r: 10**r.uniform(-5, -3.5))
     return hparams
 

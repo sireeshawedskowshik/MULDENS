@@ -88,7 +88,7 @@ class myImageList(Dataset):
 class MultipleDomainDataset:
     N_STEPS = 5001           # Default, subclasses may override
     CHECKPOINT_FREQ = 100    # Default, subclasses may override
-    N_WORKERS =8           # Default, subclasses may override
+    N_WORKERS =8          # Default, subclasses may override
     ENVIRONMENTS = None      # Subclasses should override
     INPUT_SHAPE = None       # Subclasses should override
 
@@ -128,9 +128,9 @@ class MultipleEnvironmentMNIST(MultipleDomainDataset):
         super().__init__()
         if root is None:
             raise ValueError('Data directory not specified!')
-
-        original_dataset_tr = MNIST(root, train=True, download=True)
-        original_dataset_te = MNIST(root, train=False, download=True)
+        
+        original_dataset_tr = MNIST(root, train=True, download=False)
+        original_dataset_te = MNIST(root, train=False, download=False)
 
         original_images = torch.cat((original_dataset_tr.data,
                                      original_dataset_te.data))
@@ -160,7 +160,8 @@ class ColoredMNIST(MultipleEnvironmentMNIST):
     def __init__(self, root, test_envs, hparams):
         super(ColoredMNIST, self).__init__(root, [0.1, 0.2, 0.9],
                                          self.color_dataset, (2, 28, 28,), 2)
-
+        self.N_STEPS = 10001
+        self.CHECKPOINT_FREQ=300
         self.input_shape = (2, 28, 28,)
         self.num_classes = 2
 

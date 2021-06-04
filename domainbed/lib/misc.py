@@ -26,6 +26,50 @@ class PredictiveEntropy(nn.Module):
         b = F.softmax(x, dim=1) * F.log_softmax(x, dim=1)
         b = -1.0 * b.sum(dim=1)
         return b
+class ECELoss(nn.Module):
+    """
+    Calculates the Expected Calibration Error of a model.
+    (This isn't necessary for temperature scaling, just a cool metric).
+
+    The input to this loss is the logits of a model, NOT the softmax scores.
+
+    This divides the confidence outputs into equally-sized interval bins.
+    In each bin, we compute the confidence gap:
+
+    bin_gap = | avg_confidence_in_bin - accuracy_in_bin |
+
+    We then return a weighted average of the gaps, based on the number
+    of samples in each bin
+
+    See: Naeini, Mahdi Pakdaman, Gregory F. Cooper, and Milos Hauskrecht.
+    "Obtaining Well Calibrated Probabilities Using Bayesian Binning." AAAI.
+    2015.
+    """
+    def __init__(self, n_bins=15):
+        """
+        n_bins (int): number of confidence interval bins
+        """
+        super(ECELoss, self).__init__()
+        bin_boundaries = torch.linspace(0, 1, n_bins + 1)
+        self.bin_lowers = bin_boundaries[:-1]
+        self.bin_uppers = bin_boundaries[1:]
+
+    def forward(self, logits, labels):
+        softmaxes = F.softmax(logits, dim=1)
+        confidences, predictions = torch.max(softmaxes, 1)
+        accuracies = predictions.eq(labels)
+
+        ece = torch.zeros(1, device=logits.device)
+        for bin_lower, bin_upper in zip(self.bin_lowers, self.bin_uppers):
+            # Calculated |confidence - accuracy| in each bin
+            in_bin = confidences.gt(bin_lower.item()) * confidences.le(bin_upper.item())
+            prop_in_bin = in_bin.float().mean()
+            if prop_in_bin.item() > 0:
+                accuracy_in_bin = accuracies[in_bin].float().mean()
+                avg_confidence_in_bin = confidences[in_bin].mean()
+                ece += torch.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+
+        return ece
 def make_weights_for_balanced_classes(dataset):
     counts = Counter()
     classes = []
@@ -153,7 +197,7 @@ def calculate_cosine_similarity_loss(list_gradients1,list_gradients2):
         cos_params.append(cos_sim)
     return torch.mean(torch.Tensor(cos_params))
 
-def invenio_beta_grads(loaders, test_env_loader, model_chosen, device):
+def MULDENS_beta_grads(loaders, test_env_loader, model_chosen, device):
     test_env_grads = []
     
     for x, y in test_env_loader:
@@ -200,7 +244,9 @@ def ensemble_accuracy(networks, loader, weights, device):
     labels_=[]
     pred_entropies_all=[]
     max_probs= []
-    entropy = PredictiveEntropy()
+    entropy = PredictiveEntropy().to(device)
+    eceloss = ECELoss().to(device)
+
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device)
@@ -237,9 +283,10 @@ def ensemble_accuracy(networks, loader, weights, device):
     
     return_dict['labels']= np.concatenate(labels_)
     return_dict['pred_entropies']= np.concatenate(pred_entropies_all)
-
+    return_dict['ece']= eceloss(torch.tensor(return_dict['preds']).to(device),\
+        torch.tensor(return_dict['labels']).to(device) ).item()
     return return_dict
-def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device,acc_flags):
+def MULDENS_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_each_domain,device,acc_flags):
     compute_test_beta=acc_flags['compute_test_beta'] # setting this to false will give you ensemble
     ensemble_for_obs= acc_flags['ensemble_for_obs']
     
@@ -260,13 +307,13 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
     un_obs_outsplit_name = ['env{}_out'.format(i) for i in test_envs]
 
     
-    for network_i in algorithm.invenio_networks:
+    for network_i in algorithm.MULDENS_networks:
         network_i.eval()
 
     
-    domains_selected_for_each_model=  [[] for i in range(len(algorithm.invenio_networks))]
+    domains_selected_for_each_model=  [[] for i in range(len(algorithm.MULDENS_networks))]
     model_domains = []
-    for model in range(len(algorithm.invenio_networks)):
+    for model in range(len(algorithm.MULDENS_networks)):
         for i,ms in enumerate(correct_models_selected_for_each_domain):
             if ms is not np.nan:
                 if ms == model:
@@ -282,14 +329,14 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                 loader= eval_dict[name][0]
                 weights= eval_dict[name][1]
                 if i in test_envs: name = 'unobs_'+name
-                for m in range(len(algorithm.invenio_networks)):
-                    acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
+                for m in range(len(algorithm.MULDENS_networks)):
+                    acc= accuracy(algorithm.MULDENS_networks[m],loader,weights,device)
                      
                     results[name+'_m_'+str(m)+'_acc'] = acc
-                # for m in range(len(algorithm.invenio_networks)):
-                #         acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
+                # for m in range(len(algorithm.MULDENS_networks)):
+                #         acc= accuracy(algorithm.MULDENS_networks[m],loader,weights,device)
                 #         results[name+'_m_'+str(m)+'_acc'] = acc
-                ensemble_results= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
+                ensemble_results= ensemble_accuracy(algorithm.MULDENS_networks,loader,weights,device)
                 
                 results[name+'_ens_acc']= ensemble_results['acc']
                 # results[name+'_preds_models']= ensemble_results['preds']
@@ -304,13 +351,13 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                     loader= eval_dict[name][0]
                     weights= eval_dict[name][1]
                     model_num = int(correct_models_selected_for_each_domain[i])
-                    acc=accuracy(algorithm.invenio_networks[model_num],loader,weights,device)
+                    acc=accuracy(algorithm.MULDENS_networks[model_num],loader,weights,device)
                     results[name+'_acc'] = acc
         # for unobserved domains we will pick top k models from beta  and either do an ensemble or directly pick the best
         #model and return the accuracy
         #beta is a (num_testenvs X num_models)
         if compute_test_beta:
-            beta = torch.zeros((len(test_envs), len(algorithm.invenio_networks)))
+            beta = torch.zeros((len(test_envs), len(algorithm.MULDENS_networks)))
             for test_env in range(len(test_envs)):
                 for i, domain_idx in enumerate(domains_selected_for_each_model):
                     loaders = []
@@ -320,7 +367,7 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                     test_env_domain_name = 'env'+str(test_env)+'_out'
                     test_env_loader= eval_dict[test_env_domain_name][0]
                     if len(domain_idx) != 0:
-                        beta[test_env,i] = invenio_beta_grads(loaders, test_env_loader, algorithm.invenio_networks[i], device)
+                        beta[test_env,i] = MULDENS_beta_grads(loaders, test_env_loader, algorithm.MULDENS_networks[i], device)
                     else:
                         beta[test_env,i] = 0
             for i,test_env in enumerate(test_envs):
@@ -330,7 +377,7 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                     name = 'env'+str(test_env)+split
                     loader= eval_dict[name][0]
                     weights= eval_dict[name][1]
-                    acc=accuracy(algorithm.invenio_networks[best_model_num],loader,weights,device)
+                    acc=accuracy(algorithm.MULDENS_networks[best_model_num],loader,weights,device)
                     results[name+'_acc'] = acc
             results['beta_test']= beta
         else:
@@ -342,22 +389,22 @@ def invenio_accuracy(algorithm,eval_dict, test_envs,correct_models_selected_for_
                     name = 'env'+str(test_env)+split
                     loader= eval_dict[name][0]
                     weights= eval_dict[name][1]
-                    for m in range(len(algorithm.invenio_networks)):
-                        acc= accuracy(algorithm.invenio_networks[m],loader,weights,device)
+                    for m in range(len(algorithm.MULDENS_networks)):
+                        acc= accuracy(algorithm.MULDENS_networks[m],loader,weights,device)
                         results[name+'_m_'+str(m)+'_acc'] = acc
-                    ensemble_results= ensemble_accuracy(algorithm.invenio_networks,loader,weights,device)
+                    ensemble_results= ensemble_accuracy(algorithm.MULDENS_networks,loader,weights,device)
                     results[name+'_ens_acc']= ensemble_results['acc']
                     results[name+'_preds_models']= ensemble_results['preds']
                     results[name+'_labels']= ensemble_results['labels']
     return results
-    # domains_selected_for_each_model=  [[] for i in range(len(algorithm.invenio_networks))]
-    # for m in range(len(algorithm.invenio_networks)):
+    # domains_selected_for_each_model=  [[] for i in range(len(algorithm.MULDENS_networks))]
+    # for m in range(len(algorithm.MULDENS_networks)):
     #     for i,ms in enumerate(correct_models_selected_for_each_domain):
     #         if ms is not np.nan:
     #             if ms ==m:
     #                 domains_selected_for_each_model[m].append(i)
     # # compute betas
-    # for i, model in enumerate(algorithm.invenio_networks):
+    # for i, model in enumerate(algorithm.MULDENS_networks):
     #     # compute gradients with the corresponding domains selected for this model
     #     domains_selected = domains_selected_for_each_model[i]
     #     obs_loaders= []
