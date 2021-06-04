@@ -35,11 +35,7 @@ We use two different model selection criteria Overall Average and Overall Ensemb
 
 
 ## Baseline Results.
-We report baseline results from (https://arxiv.org/abs/2007.01434) and their github repo.
+We report baseline results In search of lost domain generalization paper (https://openreview.net/pdf?id=lQdXeXDoWtI) and their github repo.
 Full results for [commit 7df6f06](https://github.com/facebookresearch/DomainBed/tree/7df6f06a6f9062284812a3f174c306218932c5e4) in LaTeX format available [here](domainbed/results/2020_10_06_7df6f06/results.tex).
 
 
-
-## License
-
-This source code is released under the MIT license, included [here](LICENSE).
