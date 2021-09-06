@@ -118,7 +118,7 @@ def ensemble_accuracy(networks, loader, weights, device):
             y = y.to(device)
             
             p = [network(x) for network in networks]
-
+            p = [torch.softmax(j,1) for j in p]
             p_mean = torch.mean(torch.stack(p),dim =0)
             
             if weights is None:
